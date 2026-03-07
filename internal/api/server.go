@@ -263,6 +263,9 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	auth.SetQuotaCooldownDisabled(cfg.DisableCooling)
 	// Initialize management handler
 	s.mgmt = managementHandlers.NewHandler(cfg, configFilePath, authManager)
+	if err := usage.ConfigurePersistentStore(cfg.AuthDir); err != nil {
+		log.Errorf("failed to configure usage statistics store: %v", err)
+	}
 	if optionState.localPassword != "" {
 		s.mgmt.SetLocalPassword(optionState.localPassword)
 	}
@@ -902,6 +905,11 @@ func (s *Server) UpdateClients(cfg *config.Config) {
 
 	if oldCfg == nil || oldCfg.UsageStatisticsEnabled != cfg.UsageStatisticsEnabled {
 		usage.SetStatisticsEnabled(cfg.UsageStatisticsEnabled)
+	}
+	if oldCfg == nil || oldCfg.AuthDir != cfg.AuthDir {
+		if err := usage.ConfigurePersistentStore(cfg.AuthDir); err != nil {
+			log.Errorf("failed to reconfigure usage statistics store: %v", err)
+		}
 	}
 
 	if s.requestLogger != nil && (oldCfg == nil || oldCfg.ErrorLogsMaxFiles != cfg.ErrorLogsMaxFiles) {
