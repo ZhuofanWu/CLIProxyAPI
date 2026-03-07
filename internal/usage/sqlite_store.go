@@ -123,6 +123,11 @@ func (s *RequestStatistics) Snapshot() StatisticsSnapshot {
 
 // SnapshotContext returns a snapshot of the aggregated statistics.
 func (s *RequestStatistics) SnapshotContext(ctx context.Context) (StatisticsSnapshot, error) {
+	return s.SnapshotContextWithOptions(ctx, SnapshotOptions{})
+}
+
+// SnapshotContextWithOptions returns a snapshot of the aggregated statistics.
+func (s *RequestStatistics) SnapshotContextWithOptions(ctx context.Context, options SnapshotOptions) (StatisticsSnapshot, error) {
 	db, err := s.openDatabase()
 	if err != nil {
 		if errors.Is(err, sql.ErrConnDone) {
@@ -132,30 +137,44 @@ func (s *RequestStatistics) SnapshotContext(ctx context.Context) (StatisticsSnap
 	}
 	defer db.Close()
 
-	result := StatisticsSnapshot{
-		APIs:           make(map[string]APISnapshot),
-		RequestsByDay:  make(map[string]int64),
-		RequestsByHour: make(map[string]int64),
-		TokensByDay:    make(map[string]int64),
-		TokensByHour:   make(map[string]int64),
-	}
+	result := newStatisticsSnapshot()
+	options = normalizeSnapshotOptions(options)
 
-	if err := querySummary(ctx, db, &result); err != nil {
-		return StatisticsSnapshot{}, err
+	if options.Since.IsZero() {
+		if err := querySummary(ctx, db, &result); err != nil {
+			return StatisticsSnapshot{}, err
+		}
+		if err := queryAPIRollups(ctx, db, &result); err != nil {
+			return StatisticsSnapshot{}, err
+		}
+		if err := queryModelRollups(ctx, db, &result); err != nil {
+			return StatisticsSnapshot{}, err
+		}
+		if err := queryDailyRollups(ctx, db, &result); err != nil {
+			return StatisticsSnapshot{}, err
+		}
+		if err := queryHourlyRollups(ctx, db, &result); err != nil {
+			return StatisticsSnapshot{}, err
+		}
+	} else {
+		filter := buildUsageRecordFilter(options.Since)
+		if err := querySummaryFromRecords(ctx, db, &result, filter); err != nil {
+			return StatisticsSnapshot{}, err
+		}
+		if err := queryAPIRollupsFromRecords(ctx, db, &result, filter); err != nil {
+			return StatisticsSnapshot{}, err
+		}
+		if err := queryModelRollupsFromRecords(ctx, db, &result, filter); err != nil {
+			return StatisticsSnapshot{}, err
+		}
+		if err := queryDailyRollupsFromRecords(ctx, db, &result, filter); err != nil {
+			return StatisticsSnapshot{}, err
+		}
+		if err := queryHourlyRollupsFromRecords(ctx, db, &result, filter); err != nil {
+			return StatisticsSnapshot{}, err
+		}
 	}
-	if err := queryAPIRollups(ctx, db, &result); err != nil {
-		return StatisticsSnapshot{}, err
-	}
-	if err := queryModelRollups(ctx, db, &result); err != nil {
-		return StatisticsSnapshot{}, err
-	}
-	if err := queryModelDetails(ctx, db, &result); err != nil {
-		return StatisticsSnapshot{}, err
-	}
-	if err := queryDailyRollups(ctx, db, &result); err != nil {
-		return StatisticsSnapshot{}, err
-	}
-	if err := queryHourlyRollups(ctx, db, &result); err != nil {
+	if err := queryModelDetails(ctx, db, &result, options); err != nil {
 		return StatisticsSnapshot{}, err
 	}
 
@@ -411,6 +430,7 @@ func configureUsageSchema(ctx context.Context, db *sql.DB) error {
 			total_tokens INTEGER NOT NULL DEFAULT 0
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_usage_records_api_model_ts ON usage_records (api_name, model_name, timestamp_utc DESC);`,
+		`CREATE INDEX IF NOT EXISTS idx_usage_records_ts ON usage_records (timestamp_utc DESC);`,
 	}
 	for _, statement := range statements {
 		if _, err := db.ExecContext(ctx, statement); err != nil {
@@ -601,13 +621,41 @@ func queryModelRollups(ctx context.Context, db *sql.DB, snapshot *StatisticsSnap
 	return nil
 }
 
-func queryModelDetails(ctx context.Context, db *sql.DB, snapshot *StatisticsSnapshot) error {
-	rows, err := db.QueryContext(ctx, `
+func queryModelDetails(ctx context.Context, db *sql.DB, snapshot *StatisticsSnapshot, options SnapshotOptions) error {
+	filter := buildUsageRecordFilter(options.Since)
+	args := append([]any{}, filter.args...)
+	query := `
 		SELECT api_name, model_name, timestamp_utc, source, auth_index, failed,
 		       input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens
 		FROM usage_records
-		ORDER BY api_name ASC, model_name ASC, timestamp_utc ASC
-	`)
+	`
+	if filter.whereClause != "" {
+		query += "\n" + filter.whereClause + "\n"
+	}
+	if options.DetailLimit > 0 {
+		query = `
+			SELECT api_name, model_name, timestamp_utc, source, auth_index, failed,
+			       input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens
+			FROM (
+				SELECT api_name, model_name, timestamp_utc, source, auth_index, failed,
+				       input_tokens, output_tokens, reasoning_tokens, cached_tokens, total_tokens
+				FROM usage_records
+		` + func() string {
+			if filter.whereClause != "" {
+				return "\n" + filter.whereClause + "\n"
+			}
+			return "\n"
+		}() + `
+				ORDER BY julianday(timestamp_utc) DESC, api_name ASC, model_name ASC
+				LIMIT ?
+			)
+			ORDER BY api_name ASC, model_name ASC, julianday(timestamp_utc) ASC
+		`
+		args = append(args, options.DetailLimit)
+	} else {
+		query += "ORDER BY api_name ASC, model_name ASC, julianday(timestamp_utc) ASC\n"
+	}
+	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("usage statistics: query model details: %w", err)
 	}
@@ -654,6 +702,208 @@ func queryModelDetails(ctx context.Context, db *sql.DB, snapshot *StatisticsSnap
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("usage statistics: iterate model details: %w", err)
+	}
+	return nil
+}
+
+type usageRecordFilter struct {
+	whereClause string
+	args        []any
+}
+
+func newStatisticsSnapshot() StatisticsSnapshot {
+	return StatisticsSnapshot{
+		APIs:           make(map[string]APISnapshot),
+		RequestsByDay:  make(map[string]int64),
+		RequestsByHour: make(map[string]int64),
+		TokensByDay:    make(map[string]int64),
+		TokensByHour:   make(map[string]int64),
+	}
+}
+
+func normalizeSnapshotOptions(options SnapshotOptions) SnapshotOptions {
+	if !options.Since.IsZero() {
+		options.Since = options.Since.UTC()
+	}
+	if options.DetailLimit < 0 {
+		options.DetailLimit = 0
+	}
+	return options
+}
+
+func buildUsageRecordFilter(since time.Time) usageRecordFilter {
+	if since.IsZero() {
+		return usageRecordFilter{}
+	}
+	return usageRecordFilter{
+		whereClause: "WHERE julianday(timestamp_utc) >= julianday(?)",
+		args:        []any{since.UTC().Format(time.RFC3339Nano)},
+	}
+}
+
+func querySummaryFromRecords(ctx context.Context, db *sql.DB, snapshot *StatisticsSnapshot, filter usageRecordFilter) error {
+	if snapshot == nil {
+		return nil
+	}
+	query := `
+		SELECT COUNT(*),
+		       COALESCE(SUM(CASE WHEN failed = 0 THEN 1 ELSE 0 END), 0),
+		       COALESCE(SUM(CASE WHEN failed != 0 THEN 1 ELSE 0 END), 0),
+		       COALESCE(SUM(total_tokens), 0)
+		FROM usage_records
+	`
+	if filter.whereClause != "" {
+		query += "\n" + filter.whereClause + "\n"
+	}
+	row := db.QueryRowContext(ctx, query, filter.args...)
+	if err := row.Scan(&snapshot.TotalRequests, &snapshot.SuccessCount, &snapshot.FailureCount, &snapshot.TotalTokens); err != nil {
+		return fmt.Errorf("usage statistics: query filtered summary: %w", err)
+	}
+	return nil
+}
+
+func queryAPIRollupsFromRecords(ctx context.Context, db *sql.DB, snapshot *StatisticsSnapshot, filter usageRecordFilter) error {
+	query := `
+		SELECT api_name, COUNT(*), COALESCE(SUM(total_tokens), 0)
+		FROM usage_records
+	`
+	if filter.whereClause != "" {
+		query += "\n" + filter.whereClause + "\n"
+	}
+	query += "GROUP BY api_name ORDER BY api_name ASC"
+	rows, err := db.QueryContext(ctx, query, filter.args...)
+	if err != nil {
+		return fmt.Errorf("usage statistics: query filtered api rollups: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			apiName       string
+			totalRequests int64
+			totalTokens   int64
+		)
+		if err := rows.Scan(&apiName, &totalRequests, &totalTokens); err != nil {
+			return fmt.Errorf("usage statistics: scan filtered api rollup: %w", err)
+		}
+		snapshot.APIs[apiName] = APISnapshot{
+			TotalRequests: totalRequests,
+			TotalTokens:   totalTokens,
+			Models:        make(map[string]ModelSnapshot),
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("usage statistics: iterate filtered api rollups: %w", err)
+	}
+	return nil
+}
+
+func queryModelRollupsFromRecords(ctx context.Context, db *sql.DB, snapshot *StatisticsSnapshot, filter usageRecordFilter) error {
+	query := `
+		SELECT api_name, model_name, COUNT(*), COALESCE(SUM(total_tokens), 0),
+		       COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
+		       COALESCE(SUM(reasoning_tokens), 0), COALESCE(SUM(cached_tokens), 0)
+		FROM usage_records
+	`
+	if filter.whereClause != "" {
+		query += "\n" + filter.whereClause + "\n"
+	}
+	query += "GROUP BY api_name, model_name ORDER BY api_name ASC, model_name ASC"
+	rows, err := db.QueryContext(ctx, query, filter.args...)
+	if err != nil {
+		return fmt.Errorf("usage statistics: query filtered model rollups: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			apiName       string
+			modelName     string
+			modelSnapshot ModelSnapshot
+		)
+		if err := rows.Scan(
+			&apiName,
+			&modelName,
+			&modelSnapshot.TotalRequests,
+			&modelSnapshot.TotalTokens,
+			&modelSnapshot.InputTokens,
+			&modelSnapshot.OutputTokens,
+			&modelSnapshot.ReasoningTokens,
+			&modelSnapshot.CachedTokens,
+		); err != nil {
+			return fmt.Errorf("usage statistics: scan filtered model rollup: %w", err)
+		}
+		apiSnapshot := snapshot.APIs[apiName]
+		if apiSnapshot.Models == nil {
+			apiSnapshot.Models = make(map[string]ModelSnapshot)
+		}
+		apiSnapshot.Models[modelName] = modelSnapshot
+		snapshot.APIs[apiName] = apiSnapshot
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("usage statistics: iterate filtered model rollups: %w", err)
+	}
+	return nil
+}
+
+func queryDailyRollupsFromRecords(ctx context.Context, db *sql.DB, snapshot *StatisticsSnapshot, filter usageRecordFilter) error {
+	query := `
+		SELECT date(timestamp_utc), COUNT(*), COALESCE(SUM(total_tokens), 0)
+		FROM usage_records
+	`
+	if filter.whereClause != "" {
+		query += "\n" + filter.whereClause + "\n"
+	}
+	query += "GROUP BY date(timestamp_utc) ORDER BY date(timestamp_utc) ASC"
+	rows, err := db.QueryContext(ctx, query, filter.args...)
+	if err != nil {
+		return fmt.Errorf("usage statistics: query filtered daily rollups: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			dayKey       string
+			requestCount int64
+			totalTokens  int64
+		)
+		if err := rows.Scan(&dayKey, &requestCount, &totalTokens); err != nil {
+			return fmt.Errorf("usage statistics: scan filtered daily rollup: %w", err)
+		}
+		snapshot.RequestsByDay[dayKey] = requestCount
+		snapshot.TokensByDay[dayKey] = totalTokens
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("usage statistics: iterate filtered daily rollups: %w", err)
+	}
+	return nil
+}
+
+func queryHourlyRollupsFromRecords(ctx context.Context, db *sql.DB, snapshot *StatisticsSnapshot, filter usageRecordFilter) error {
+	query := `
+		SELECT strftime('%H', timestamp_utc), COUNT(*), COALESCE(SUM(total_tokens), 0)
+		FROM usage_records
+	`
+	if filter.whereClause != "" {
+		query += "\n" + filter.whereClause + "\n"
+	}
+	query += "GROUP BY strftime('%H', timestamp_utc) ORDER BY strftime('%H', timestamp_utc) ASC"
+	rows, err := db.QueryContext(ctx, query, filter.args...)
+	if err != nil {
+		return fmt.Errorf("usage statistics: query filtered hourly rollups: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			hourKey      string
+			requestCount int64
+			totalTokens  int64
+		)
+		if err := rows.Scan(&hourKey, &requestCount, &totalTokens); err != nil {
+			return fmt.Errorf("usage statistics: scan filtered hourly rollup: %w", err)
+		}
+		snapshot.RequestsByHour[hourKey] = requestCount
+		snapshot.TokensByHour[hourKey] = totalTokens
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("usage statistics: iterate filtered hourly rollups: %w", err)
 	}
 	return nil
 }

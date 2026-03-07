@@ -83,6 +83,12 @@ type MergeResult struct {
 	Skipped int64 `json:"skipped"`
 }
 
+// SnapshotOptions controls how usage snapshots are materialized.
+type SnapshotOptions struct {
+	Since       time.Time
+	DetailLimit int
+}
+
 func resolveAPIIdentifier(ctx context.Context, record coreusage.Record) string {
 	if ctx != nil {
 		if ginCtx, ok := ctx.Value("gin").(*gin.Context); ok && ginCtx != nil {

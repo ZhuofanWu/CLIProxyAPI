@@ -134,6 +134,88 @@ func TestRequestStatistics_PersistedSnapshot(t *testing.T) {
 	}
 }
 
+func TestRequestStatistics_SnapshotContextWithOptionsFiltersRangeAndLimitsDetails(t *testing.T) {
+	original := StatisticsEnabled()
+	SetStatisticsEnabled(true)
+	t.Cleanup(func() { SetStatisticsEnabled(original) })
+
+	stats := NewRequestStatistics()
+	if err := stats.Configure(t.TempDir()); err != nil {
+		t.Fatalf("configure stats: %v", err)
+	}
+	t.Cleanup(func() { _ = stats.Close() })
+
+	base := time.Date(2026, 3, 7, 0, 0, 0, 0, time.UTC)
+	stats.Record(context.Background(), coreusage.Record{
+		Provider:    "openai",
+		APIKey:      "api-range",
+		Model:       "too-old",
+		RequestedAt: base.Add(-time.Hour),
+		Detail: coreusage.Detail{
+			InputTokens:  1,
+			OutputTokens: 1,
+			TotalTokens:  2,
+		},
+	})
+
+	for index := 0; index < 120; index++ {
+		model := "model-a"
+		if index%2 == 1 {
+			model = "model-b"
+		}
+		stats.Record(context.Background(), coreusage.Record{
+			Provider:    "openai",
+			APIKey:      "api-range",
+			Model:       model,
+			RequestedAt: base.Add(time.Duration(index) * time.Minute),
+			Detail: coreusage.Detail{
+				InputTokens:  2,
+				OutputTokens: 3,
+				TotalTokens:  5,
+			},
+		})
+	}
+
+	snapshot, err := stats.SnapshotContextWithOptions(context.Background(), SnapshotOptions{
+		Since:       base,
+		DetailLimit: 100,
+	})
+	if err != nil {
+		t.Fatalf("snapshot with options: %v", err)
+	}
+	if snapshot.TotalRequests != 120 {
+		t.Fatalf("filtered total requests = %d, want 120", snapshot.TotalRequests)
+	}
+	if snapshot.TotalTokens != 600 {
+		t.Fatalf("filtered total tokens = %d, want 600", snapshot.TotalTokens)
+	}
+	apiSnapshot := snapshot.APIs["api-range"]
+	if apiSnapshot.TotalRequests != 120 {
+		t.Fatalf("api-range total requests = %d, want 120", apiSnapshot.TotalRequests)
+	}
+
+	detailCount := 0
+	var oldestIncluded time.Time
+	for _, modelSnapshot := range apiSnapshot.Models {
+		detailCount += len(modelSnapshot.Details)
+		for _, detail := range modelSnapshot.Details {
+			if oldestIncluded.IsZero() || detail.Timestamp.Before(oldestIncluded) {
+				oldestIncluded = detail.Timestamp
+			}
+			if detail.Timestamp.Before(base) {
+				t.Fatalf("found out-of-range detail: %s", detail.Timestamp)
+			}
+		}
+	}
+	if detailCount != 100 {
+		t.Fatalf("detail count = %d, want 100", detailCount)
+	}
+	wantOldestIncluded := base.Add(20 * time.Minute)
+	if !oldestIncluded.Equal(wantOldestIncluded) {
+		t.Fatalf("oldest included detail = %s, want %s", oldestIncluded, wantOldestIncluded)
+	}
+}
+
 func TestRequestStatistics_ExportImportAndLegacyMerge(t *testing.T) {
 	original := StatisticsEnabled()
 	SetStatisticsEnabled(true)

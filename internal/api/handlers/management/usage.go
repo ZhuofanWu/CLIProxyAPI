@@ -2,12 +2,22 @@ package management
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/usage"
 )
+
+const usageEventDetailLimit = 100
+
+var usageRangeSinceMap = map[string]time.Duration{
+	"7h":  7 * time.Hour,
+	"24h": 24 * time.Hour,
+	"7d":  7 * 24 * time.Hour,
+}
 
 type usageExportPayload struct {
 	Version    int                      `json:"version"`
@@ -24,6 +34,28 @@ type usageImportPayload struct {
 
 // GetUsageStatistics returns the persisted request statistics snapshot.
 func (h *Handler) GetUsageStatistics(c *gin.Context) {
+	var snapshot usage.StatisticsSnapshot
+	if h != nil && h.usageStats != nil {
+		options, optionsErr := buildUsageSnapshotOptions(c.Query("range"))
+		if optionsErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": optionsErr.Error()})
+			return
+		}
+		var err error
+		snapshot, err = h.usageStats.SnapshotContextWithOptions(c.Request.Context(), options)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"usage":           snapshot,
+		"failed_requests": snapshot.FailureCount,
+	})
+}
+
+// GetFullUsageStatistics returns the complete persisted request statistics snapshot.
+func (h *Handler) GetFullUsageStatistics(c *gin.Context) {
 	var snapshot usage.StatisticsSnapshot
 	if h != nil && h.usageStats != nil {
 		var err error
@@ -111,4 +143,18 @@ func (h *Handler) ImportUsageStatistics(c *gin.Context) {
 		"total_requests":  snapshot.TotalRequests,
 		"failed_requests": snapshot.FailureCount,
 	})
+}
+
+func buildUsageSnapshotOptions(rawRange string) (usage.SnapshotOptions, error) {
+	queryRange := strings.ToLower(strings.TrimSpace(rawRange))
+	options := usage.SnapshotOptions{DetailLimit: usageEventDetailLimit}
+	if queryRange == "" || queryRange == "all" {
+		return options, nil
+	}
+	duration, ok := usageRangeSinceMap[queryRange]
+	if !ok {
+		return usage.SnapshotOptions{}, fmt.Errorf("invalid usage range: %s", rawRange)
+	}
+	options.Since = time.Now().UTC().Add(-duration)
+	return options, nil
 }
