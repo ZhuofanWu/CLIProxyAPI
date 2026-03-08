@@ -62,6 +62,13 @@ error-logs-max-files: 10
 # When false, disable persistent usage statistics aggregation
 usage-statistics-enabled: false
 
+# Per-model pricing. Values are expressed per 1,000,000 tokens and support up to 3 decimal places.
+# model_price:
+#   - name: "gpt-4o"
+#     input: 5.000
+#     output: 15.000
+#     cache_read: 2.500
+
 # Proxy URL. Supports socks5/http/https protocols. Example: socks5://user:pass@192.168.1.1:1080/
 proxy-url: ""
 

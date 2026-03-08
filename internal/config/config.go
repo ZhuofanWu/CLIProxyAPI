@@ -118,6 +118,9 @@ type Config struct {
 	// gemini-api-key, codex-api-key, claude-api-key, openai-compatibility, vertex-api-key, and ampcode.
 	OAuthModelAlias map[string][]OAuthModelAlias `yaml:"oauth-model-alias,omitempty" json:"oauth-model-alias,omitempty"`
 
+	// ModelPrice defines per-model pricing configured under model_price.
+	ModelPrice []ModelPriceItem `yaml:"model_price" json:"model_price"`
+
 	// Payload defines default and override rules for provider payload parameters.
 	Payload PayloadConfig `yaml:"payload" json:"payload"`
 
@@ -626,6 +629,9 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 
 	// Normalize global OAuth model name aliases.
 	cfg.SanitizeOAuthModelAlias()
+
+	// Normalize per-model pricing entries.
+	cfg.SanitizeModelPrice()
 
 	// Validate raw payload rules and drop invalid entries.
 	cfg.SanitizePayloadRules()
