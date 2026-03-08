@@ -32,20 +32,24 @@ type usageImportPayload struct {
 	Records []usage.PersistedRecord  `json:"records"`
 }
 
-// GetUsageStatistics returns the persisted request statistics snapshot.
+// GetUsageStatistics returns usage statistics using the active storage backend semantics.
 func (h *Handler) GetUsageStatistics(c *gin.Context) {
 	var snapshot usage.StatisticsSnapshot
 	if h != nil && h.usageStats != nil {
-		options, optionsErr := buildUsageSnapshotOptions(c.Query("range"))
-		if optionsErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": optionsErr.Error()})
-			return
-		}
-		var err error
-		snapshot, err = h.usageStats.SnapshotContextWithOptions(c.Request.Context(), options)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+		if h.usageStats.StorageWay() == usage.UsageStorageWaySQLite {
+			options, optionsErr := buildUsageSnapshotOptions(c.Query("range"))
+			if optionsErr != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": optionsErr.Error()})
+				return
+			}
+			var err error
+			snapshot, err = h.usageStats.SnapshotContextWithOptions(c.Request.Context(), options)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		} else {
+			snapshot = h.usageStats.Snapshot()
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -54,15 +58,19 @@ func (h *Handler) GetUsageStatistics(c *gin.Context) {
 	})
 }
 
-// GetFullUsageStatistics returns the complete persisted request statistics snapshot.
+// GetFullUsageStatistics returns the complete usage snapshot.
 func (h *Handler) GetFullUsageStatistics(c *gin.Context) {
 	var snapshot usage.StatisticsSnapshot
 	if h != nil && h.usageStats != nil {
-		var err error
-		snapshot, err = h.usageStats.SnapshotContext(c.Request.Context())
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+		if h.usageStats.StorageWay() == usage.UsageStorageWaySQLite {
+			var err error
+			snapshot, err = h.usageStats.SnapshotContext(c.Request.Context())
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		} else {
+			snapshot = h.usageStats.Snapshot()
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -75,28 +83,34 @@ func (h *Handler) GetFullUsageStatistics(c *gin.Context) {
 func (h *Handler) ExportUsageStatistics(c *gin.Context) {
 	var snapshot usage.StatisticsSnapshot
 	var records []usage.PersistedRecord
+	version := 1
 	if h != nil && h.usageStats != nil {
-		var err error
-		snapshot, err = h.usageStats.SnapshotContext(c.Request.Context())
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		records, err = h.usageStats.ExportRecords(c.Request.Context())
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+		if h.usageStats.StorageWay() == usage.UsageStorageWaySQLite {
+			version = 2
+			var err error
+			snapshot, err = h.usageStats.SnapshotContext(c.Request.Context())
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			records, err = h.usageStats.ExportRecords(c.Request.Context())
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		} else {
+			snapshot = h.usageStats.Snapshot()
 		}
 	}
 	c.JSON(http.StatusOK, usageExportPayload{
-		Version:    2,
+		Version:    version,
 		ExportedAt: time.Now().UTC(),
 		Usage:      snapshot,
 		Records:    records,
 	})
 }
 
-// ImportUsageStatistics merges a previously exported usage payload into SQLite.
+// ImportUsageStatistics imports a usage payload using the active storage backend semantics.
 func (h *Handler) ImportUsageStatistics(c *gin.Context) {
 	if h == nil || h.usageStats == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "usage statistics unavailable"})
@@ -114,25 +128,41 @@ func (h *Handler) ImportUsageStatistics(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
 		return
 	}
-	if payload.Version != 0 && payload.Version != 1 && payload.Version != 2 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported version"})
-		return
-	}
 
 	var (
 		result   usage.MergeResult
 		mergeErr error
 	)
-	if payload.Version == 2 || len(payload.Records) > 0 {
-		result, mergeErr = h.usageStats.MergeRecords(c.Request.Context(), payload.Records)
+	if h.usageStats.StorageWay() == usage.UsageStorageWaySQLite {
+		if payload.Version != 0 && payload.Version != 1 && payload.Version != 2 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported version"})
+			return
+		}
+		if payload.Version == 2 || len(payload.Records) > 0 {
+			result, mergeErr = h.usageStats.MergeRecords(c.Request.Context(), payload.Records)
+		} else {
+			result, mergeErr = h.usageStats.MergeSnapshotContext(c.Request.Context(), payload.Usage)
+		}
 	} else {
-		result, mergeErr = h.usageStats.MergeSnapshotContext(c.Request.Context(), payload.Usage)
+		if payload.Version != 0 && payload.Version != 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported version"})
+			return
+		}
+		result = h.usageStats.MergeSnapshot(payload.Usage)
+		mergeErr = nil
 	}
 	if mergeErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": mergeErr.Error()})
 		return
 	}
-	snapshot, snapshotErr := h.usageStats.SnapshotContext(c.Request.Context())
+
+	var snapshotErr error
+	var snapshot usage.StatisticsSnapshot
+	if h.usageStats.StorageWay() == usage.UsageStorageWaySQLite {
+		snapshot, snapshotErr = h.usageStats.SnapshotContext(c.Request.Context())
+	} else {
+		snapshot = h.usageStats.Snapshot()
+	}
 	if snapshotErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": snapshotErr.Error()})
 		return

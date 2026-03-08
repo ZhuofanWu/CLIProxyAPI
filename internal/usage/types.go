@@ -3,7 +3,9 @@ package usage
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -11,9 +13,255 @@ import (
 )
 
 const (
+	UsageStorageWayMemory = "memory"
+	UsageStorageWaySQLite = "sqlite"
+
 	usageDatabaseFileName = "usage.db"
 	usageExportVersionV2  = 2
 )
+
+type statisticsStore interface {
+	Record(context.Context, coreusage.Record)
+	Snapshot() StatisticsSnapshot
+	SnapshotContext(context.Context) (StatisticsSnapshot, error)
+	SnapshotContextWithOptions(context.Context, SnapshotOptions) (StatisticsSnapshot, error)
+	ExportRecords(context.Context) ([]PersistedRecord, error)
+	MergeRecords(context.Context, []PersistedRecord) (MergeResult, error)
+	MergeSnapshot(StatisticsSnapshot) MergeResult
+	MergeSnapshotContext(context.Context, StatisticsSnapshot) (MergeResult, error)
+	Configure(string) error
+	DatabasePath() string
+	Close() error
+}
+
+// RequestStatistics routes usage reads and writes to the configured storage backend.
+type RequestStatistics struct {
+	mu         sync.RWMutex
+	storageWay string
+	store      statisticsStore
+}
+
+// NewRequestStatistics constructs a usage store using the legacy in-memory backend.
+func NewRequestStatistics() *RequestStatistics {
+	return &RequestStatistics{
+		storageWay: UsageStorageWayMemory,
+		store:      newMemoryStore(),
+	}
+}
+
+// NormalizeUsageStorageWay normalizes the configured storage backend selector.
+func NormalizeUsageStorageWay(raw string) (string, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	switch normalized {
+	case "", UsageStorageWayMemory:
+		return UsageStorageWayMemory, true
+	case UsageStorageWaySQLite:
+		return UsageStorageWaySQLite, true
+	default:
+		return "", false
+	}
+}
+
+// StorageWay reports the active storage backend.
+func (s *RequestStatistics) StorageWay() string {
+	if s == nil {
+		return UsageStorageWayMemory
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.storageWay == "" {
+		return UsageStorageWayMemory
+	}
+	return s.storageWay
+}
+
+// Configure switches this usage store to SQLite persistence under authDir.
+func (s *RequestStatistics) Configure(authDir string) error {
+	return s.ConfigureStorageWay(UsageStorageWaySQLite, authDir)
+}
+
+// ConfigureStorageWay switches the underlying storage backend while preserving usage data.
+func (s *RequestStatistics) ConfigureStorageWay(rawWay, authDir string) error {
+	if s == nil {
+		return nil
+	}
+	storageWay, ok := NormalizeUsageStorageWay(rawWay)
+	if !ok {
+		return fmt.Errorf("invalid usage storage way: %q", rawWay)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.store == nil {
+		s.storageWay = UsageStorageWayMemory
+		s.store = newMemoryStore()
+	}
+
+	if s.storageWay == storageWay {
+		if storageWay == UsageStorageWaySQLite {
+			return s.store.Configure(authDir)
+		}
+		return nil
+	}
+
+	currentStore := s.store
+	snapshot, err := currentStore.SnapshotContext(context.Background())
+	if err != nil {
+		return err
+	}
+
+	nextStore := newStatisticsStore(storageWay)
+	if storageWay == UsageStorageWaySQLite {
+		if err := nextStore.Configure(authDir); err != nil {
+			return err
+		}
+	}
+	if _, err := nextStore.MergeSnapshotContext(context.Background(), snapshot); err != nil {
+		_ = nextStore.Close()
+		return err
+	}
+
+	s.store = nextStore
+	s.storageWay = storageWay
+	if currentStore != nil {
+		return currentStore.Close()
+	}
+	return nil
+}
+
+// DatabasePath returns the configured SQLite file path when SQLite mode is active.
+func (s *RequestStatistics) DatabasePath() string {
+	if s == nil {
+		return ""
+	}
+	store := s.currentStore()
+	if store == nil {
+		return ""
+	}
+	return store.DatabasePath()
+}
+
+// Close closes the current storage backend.
+func (s *RequestStatistics) Close() error {
+	if s == nil {
+		return nil
+	}
+	store := s.currentStore()
+	if store == nil {
+		return nil
+	}
+	return store.Close()
+}
+
+// Record ingests a new usage record.
+func (s *RequestStatistics) Record(ctx context.Context, record coreusage.Record) {
+	if s == nil {
+		return
+	}
+	store := s.currentStore()
+	if store == nil {
+		return
+	}
+	store.Record(ctx, record)
+}
+
+// Snapshot returns a best-effort snapshot of usage statistics.
+func (s *RequestStatistics) Snapshot() StatisticsSnapshot {
+	if s == nil {
+		return StatisticsSnapshot{}
+	}
+	store := s.currentStore()
+	if store == nil {
+		return StatisticsSnapshot{}
+	}
+	return store.Snapshot()
+}
+
+// SnapshotContext returns a snapshot of usage statistics.
+func (s *RequestStatistics) SnapshotContext(ctx context.Context) (StatisticsSnapshot, error) {
+	if s == nil {
+		return StatisticsSnapshot{}, nil
+	}
+	store := s.currentStore()
+	if store == nil {
+		return StatisticsSnapshot{}, nil
+	}
+	return store.SnapshotContext(ctx)
+}
+
+// SnapshotContextWithOptions returns a snapshot of usage statistics with backend-specific options.
+func (s *RequestStatistics) SnapshotContextWithOptions(ctx context.Context, options SnapshotOptions) (StatisticsSnapshot, error) {
+	if s == nil {
+		return StatisticsSnapshot{}, nil
+	}
+	store := s.currentStore()
+	if store == nil {
+		return StatisticsSnapshot{}, nil
+	}
+	return store.SnapshotContextWithOptions(ctx, options)
+}
+
+// ExportRecords exports persisted records when supported by the current backend.
+func (s *RequestStatistics) ExportRecords(ctx context.Context) ([]PersistedRecord, error) {
+	if s == nil {
+		return nil, nil
+	}
+	store := s.currentStore()
+	if store == nil {
+		return nil, nil
+	}
+	return store.ExportRecords(ctx)
+}
+
+// MergeRecords imports persisted records into the current backend.
+func (s *RequestStatistics) MergeRecords(ctx context.Context, records []PersistedRecord) (MergeResult, error) {
+	if s == nil {
+		return MergeResult{}, nil
+	}
+	store := s.currentStore()
+	if store == nil {
+		return MergeResult{}, nil
+	}
+	return store.MergeRecords(ctx, records)
+}
+
+// MergeSnapshot merges a legacy snapshot into the current backend.
+func (s *RequestStatistics) MergeSnapshot(snapshot StatisticsSnapshot) MergeResult {
+	if s == nil {
+		return MergeResult{}
+	}
+	store := s.currentStore()
+	if store == nil {
+		return MergeResult{}
+	}
+	return store.MergeSnapshot(snapshot)
+}
+
+// MergeSnapshotContext merges a legacy snapshot into the current backend.
+func (s *RequestStatistics) MergeSnapshotContext(ctx context.Context, snapshot StatisticsSnapshot) (MergeResult, error) {
+	if s == nil {
+		return MergeResult{}, nil
+	}
+	store := s.currentStore()
+	if store == nil {
+		return MergeResult{}, nil
+	}
+	return store.MergeSnapshotContext(ctx, snapshot)
+}
+
+func (s *RequestStatistics) currentStore() statisticsStore {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.store
+}
+
+func newStatisticsStore(storageWay string) statisticsStore {
+	if storageWay == UsageStorageWaySQLite {
+		return &sqliteStore{}
+	}
+	return newMemoryStore()
+}
 
 // RequestDetail stores the timestamp and token usage for a single request.
 type RequestDetail struct {
@@ -59,10 +307,10 @@ type APISnapshot struct {
 type ModelSnapshot struct {
 	TotalRequests   int64           `json:"total_requests"`
 	TotalTokens     int64           `json:"total_tokens"`
-	InputTokens     int64           `json:"input_tokens"`
-	OutputTokens    int64           `json:"output_tokens"`
-	ReasoningTokens int64           `json:"reasoning_tokens"`
-	CachedTokens    int64           `json:"cached_tokens"`
+	InputTokens     int64           `json:"input_tokens,omitempty"`
+	OutputTokens    int64           `json:"output_tokens,omitempty"`
+	ReasoningTokens int64           `json:"reasoning_tokens,omitempty"`
+	CachedTokens    int64           `json:"cached_tokens,omitempty"`
 	Details         []RequestDetail `json:"details"`
 }
 
@@ -200,6 +448,51 @@ func normalizePersistedRecord(record PersistedRecord) PersistedRecord {
 		record.Timestamp = record.Timestamp.UTC()
 	}
 	return record
+}
+
+func recordsFromSnapshot(snapshot StatisticsSnapshot) []PersistedRecord {
+	records := make([]PersistedRecord, 0, 128)
+	for apiName, apiSnapshot := range snapshot.APIs {
+		apiName = strings.TrimSpace(apiName)
+		if apiName == "" {
+			continue
+		}
+		for modelName, modelSnapshot := range apiSnapshot.Models {
+			modelName = strings.TrimSpace(modelName)
+			if modelName == "" {
+				modelName = "unknown"
+			}
+			for _, detail := range modelSnapshot.Details {
+				records = append(records, normalizePersistedRecord(PersistedRecord{
+					APIName:   apiName,
+					ModelName: modelName,
+					Timestamp: detail.Timestamp,
+					Source:    detail.Source,
+					AuthIndex: detail.AuthIndex,
+					Failed:    detail.Failed,
+					Tokens:    detail.Tokens,
+				}))
+			}
+		}
+	}
+	sort.SliceStable(records, func(i, j int) bool {
+		left := records[i]
+		right := records[j]
+		if !left.Timestamp.Equal(right.Timestamp) {
+			return left.Timestamp.Before(right.Timestamp)
+		}
+		if left.APIName != right.APIName {
+			return left.APIName < right.APIName
+		}
+		if left.ModelName != right.ModelName {
+			return left.ModelName < right.ModelName
+		}
+		if left.Source != right.Source {
+			return left.Source < right.Source
+		}
+		return left.AuthIndex < right.AuthIndex
+	})
+	return records
 }
 
 func recordFromUsageRecord(ctx context.Context, record coreusage.Record) PersistedRecord {

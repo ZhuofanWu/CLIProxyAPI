@@ -17,19 +17,16 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// RequestStatistics persists usage records and serves aggregated statistics from SQLite.
-type RequestStatistics struct {
+// sqliteStore persists usage records and serves aggregated statistics from SQLite.
+type sqliteStore struct {
 	mu     sync.RWMutex
 	dbPath string
 }
 
 const usageWriteTimeout = 5 * time.Second
 
-// NewRequestStatistics constructs an empty statistics store.
-func NewRequestStatistics() *RequestStatistics { return &RequestStatistics{} }
-
 // Configure prepares the SQLite database under authDir.
-func (s *RequestStatistics) Configure(authDir string) error {
+func (s *sqliteStore) Configure(authDir string) error {
 	if s == nil {
 		return nil
 	}
@@ -76,7 +73,7 @@ func (s *RequestStatistics) Configure(authDir string) error {
 }
 
 // DatabasePath returns the configured SQLite file path.
-func (s *RequestStatistics) DatabasePath() string {
+func (s *sqliteStore) DatabasePath() string {
 	if s == nil {
 		return ""
 	}
@@ -86,7 +83,7 @@ func (s *RequestStatistics) DatabasePath() string {
 }
 
 // Close clears the configured database path.
-func (s *RequestStatistics) Close() error {
+func (s *sqliteStore) Close() error {
 	if s == nil {
 		return nil
 	}
@@ -97,7 +94,7 @@ func (s *RequestStatistics) Close() error {
 }
 
 // Record ingests a new usage record and updates the SQLite aggregates.
-func (s *RequestStatistics) Record(ctx context.Context, record coreusage.Record) {
+func (s *sqliteStore) Record(ctx context.Context, record coreusage.Record) {
 	if s == nil {
 		return
 	}
@@ -113,7 +110,7 @@ func (s *RequestStatistics) Record(ctx context.Context, record coreusage.Record)
 }
 
 // Snapshot returns a snapshot of the aggregated statistics.
-func (s *RequestStatistics) Snapshot() StatisticsSnapshot {
+func (s *sqliteStore) Snapshot() StatisticsSnapshot {
 	snapshot, err := s.SnapshotContext(context.Background())
 	if err != nil {
 		log.Errorf("usage statistics: snapshot: %v", err)
@@ -122,12 +119,12 @@ func (s *RequestStatistics) Snapshot() StatisticsSnapshot {
 }
 
 // SnapshotContext returns a snapshot of the aggregated statistics.
-func (s *RequestStatistics) SnapshotContext(ctx context.Context) (StatisticsSnapshot, error) {
+func (s *sqliteStore) SnapshotContext(ctx context.Context) (StatisticsSnapshot, error) {
 	return s.SnapshotContextWithOptions(ctx, SnapshotOptions{})
 }
 
 // SnapshotContextWithOptions returns a snapshot of the aggregated statistics.
-func (s *RequestStatistics) SnapshotContextWithOptions(ctx context.Context, options SnapshotOptions) (StatisticsSnapshot, error) {
+func (s *sqliteStore) SnapshotContextWithOptions(ctx context.Context, options SnapshotOptions) (StatisticsSnapshot, error) {
 	db, err := s.openDatabase()
 	if err != nil {
 		if errors.Is(err, sql.ErrConnDone) {
@@ -182,7 +179,7 @@ func (s *RequestStatistics) SnapshotContextWithOptions(ctx context.Context, opti
 }
 
 // ExportRecords returns all persisted usage records in a stable order.
-func (s *RequestStatistics) ExportRecords(ctx context.Context) ([]PersistedRecord, error) {
+func (s *sqliteStore) ExportRecords(ctx context.Context) ([]PersistedRecord, error) {
 	db, err := s.openDatabase()
 	if err != nil {
 		if errors.Is(err, sql.ErrConnDone) {
@@ -240,7 +237,7 @@ func (s *RequestStatistics) ExportRecords(ctx context.Context) ([]PersistedRecor
 }
 
 // MergeRecords imports persisted usage records.
-func (s *RequestStatistics) MergeRecords(ctx context.Context, records []PersistedRecord) (MergeResult, error) {
+func (s *sqliteStore) MergeRecords(ctx context.Context, records []PersistedRecord) (MergeResult, error) {
 	db, err := s.openDatabase()
 	if err != nil {
 		return MergeResult{}, err
@@ -276,7 +273,7 @@ func (s *RequestStatistics) MergeRecords(ctx context.Context, records []Persiste
 }
 
 // MergeSnapshot merges a legacy exported statistics snapshot into the current store.
-func (s *RequestStatistics) MergeSnapshot(snapshot StatisticsSnapshot) MergeResult {
+func (s *sqliteStore) MergeSnapshot(snapshot StatisticsSnapshot) MergeResult {
 	result, err := s.MergeSnapshotContext(context.Background(), snapshot)
 	if err != nil {
 		log.Errorf("usage statistics: merge snapshot: %v", err)
@@ -285,35 +282,11 @@ func (s *RequestStatistics) MergeSnapshot(snapshot StatisticsSnapshot) MergeResu
 }
 
 // MergeSnapshotContext merges a legacy exported statistics snapshot into the current store.
-func (s *RequestStatistics) MergeSnapshotContext(ctx context.Context, snapshot StatisticsSnapshot) (MergeResult, error) {
-	records := make([]PersistedRecord, 0, 128)
-	for apiName, apiSnapshot := range snapshot.APIs {
-		apiName = strings.TrimSpace(apiName)
-		if apiName == "" {
-			continue
-		}
-		for modelName, modelSnapshot := range apiSnapshot.Models {
-			modelName = strings.TrimSpace(modelName)
-			if modelName == "" {
-				modelName = "unknown"
-			}
-			for _, detail := range modelSnapshot.Details {
-				records = append(records, normalizePersistedRecord(PersistedRecord{
-					APIName:   apiName,
-					ModelName: modelName,
-					Timestamp: detail.Timestamp,
-					Source:    detail.Source,
-					AuthIndex: detail.AuthIndex,
-					Failed:    detail.Failed,
-					Tokens:    detail.Tokens,
-				}))
-			}
-		}
-	}
-	return s.MergeRecords(ctx, records)
+func (s *sqliteStore) MergeSnapshotContext(ctx context.Context, snapshot StatisticsSnapshot) (MergeResult, error) {
+	return s.MergeRecords(ctx, recordsFromSnapshot(snapshot))
 }
 
-func (s *RequestStatistics) insertRecord(ctx context.Context, record PersistedRecord) error {
+func (s *sqliteStore) insertRecord(ctx context.Context, record PersistedRecord) error {
 	db, err := s.openDatabase()
 	if err != nil {
 		return err
@@ -335,7 +308,7 @@ func (s *RequestStatistics) insertRecord(ctx context.Context, record PersistedRe
 	return nil
 }
 
-func (s *RequestStatistics) openDatabase() (*sql.DB, error) {
+func (s *sqliteStore) openDatabase() (*sql.DB, error) {
 	if s == nil {
 		return nil, sql.ErrConnDone
 	}

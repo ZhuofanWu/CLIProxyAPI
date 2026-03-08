@@ -339,6 +339,7 @@ func (m configTabModel) parseConfig(cfg map[string]any) []configField {
 	fields = append(fields, configField{"Logging to File", "logging-to-file", "bool", fmt.Sprintf("%v", getBool(cfg, "logging-to-file")), nil})
 	fields = append(fields, configField{"Logs Max Total Size (MB)", "logs-max-total-size-mb", "int", fmt.Sprintf("%.0f", getFloat(cfg, "logs-max-total-size-mb")), nil})
 	fields = append(fields, configField{"Error Logs Max Files", "error-logs-max-files", "int", fmt.Sprintf("%.0f", getFloat(cfg, "error-logs-max-files")), nil})
+	fields = append(fields, configField{"Usage Storage Way", "usage-static-storage-way", "string", getString(cfg, "usage_static_storage_way"), nil})
 	fields = append(fields, configField{"Usage Stats Enabled", "usage-statistics-enabled", "bool", fmt.Sprintf("%v", getBool(cfg, "usage-statistics-enabled")), nil})
 	fields = append(fields, configField{"Request Log", "request-log", "bool", fmt.Sprintf("%v", getBool(cfg, "request-log")), nil})
 
@@ -381,7 +382,7 @@ func fieldSection(apiPath string) string {
 	switch apiPath {
 	case "port", "host", "debug", "proxy-url", "request-retry", "max-retry-interval", "force-model-prefix":
 		return T("section_server")
-	case "logging-to-file", "logs-max-total-size-mb", "error-logs-max-files", "usage-statistics-enabled", "request-log":
+	case "logging-to-file", "logs-max-total-size-mb", "error-logs-max-files", "usage-static-storage-way", "usage-statistics-enabled", "request-log":
 		return T("section_logging")
 	case "ws-auth":
 		return T("section_websocket")

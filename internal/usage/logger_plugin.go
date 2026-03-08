@@ -47,18 +47,23 @@ var defaultRequestStatistics = NewRequestStatistics()
 // GetRequestStatistics returns the shared statistics store.
 func GetRequestStatistics() *RequestStatistics { return defaultRequestStatistics }
 
-// ConfigurePersistentStore configures the shared store to persist under authDir.
-func ConfigurePersistentStore(authDir string) error {
+// ConfigureStorageWay configures the shared usage store backend.
+func ConfigureStorageWay(storageWay, authDir string) error {
 	if defaultRequestStatistics == nil {
 		return nil
 	}
-	if err := defaultRequestStatistics.Configure(authDir); err != nil {
+	if err := defaultRequestStatistics.ConfigureStorageWay(storageWay, authDir); err != nil {
 		return err
 	}
 	if path := strings.TrimSpace(defaultRequestStatistics.DatabasePath()); path != "" {
 		log.Infof("usage statistics database ready: %s", path)
 	}
 	return nil
+}
+
+// ConfigurePersistentStore configures the shared store to persist under authDir.
+func ConfigurePersistentStore(authDir string) error {
+	return ConfigureStorageWay(UsageStorageWaySQLite, authDir)
 }
 
 // ClosePersistentStore closes the shared persistent store.

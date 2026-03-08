@@ -36,6 +36,9 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 	if oldCfg.LoggingToFile != newCfg.LoggingToFile {
 		changes = append(changes, fmt.Sprintf("logging-to-file: %t -> %t", oldCfg.LoggingToFile, newCfg.LoggingToFile))
 	}
+	if oldCfg.UsageStaticStorageWay != newCfg.UsageStaticStorageWay {
+		changes = append(changes, fmt.Sprintf("usage_static_storage_way: %s -> %s", oldCfg.UsageStaticStorageWay, newCfg.UsageStaticStorageWay))
+	}
 	if oldCfg.UsageStatisticsEnabled != newCfg.UsageStatisticsEnabled {
 		changes = append(changes, fmt.Sprintf("usage-statistics-enabled: %t -> %t", oldCfg.UsageStatisticsEnabled, newCfg.UsageStatisticsEnabled))
 	}

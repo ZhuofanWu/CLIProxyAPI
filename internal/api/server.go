@@ -261,11 +261,12 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	}
 	managementasset.SetCurrentConfig(cfg)
 	auth.SetQuotaCooldownDisabled(cfg.DisableCooling)
-	// Initialize management handler
-	s.mgmt = managementHandlers.NewHandler(cfg, configFilePath, authManager)
-	if err := usage.ConfigurePersistentStore(cfg.AuthDir); err != nil {
+	usage.SetStatisticsEnabled(cfg.UsageStatisticsEnabled)
+	if err := usage.ConfigureStorageWay(cfg.UsageStaticStorageWay, cfg.AuthDir); err != nil {
 		log.Errorf("failed to configure usage statistics store: %v", err)
 	}
+	// Initialize management handler
+	s.mgmt = managementHandlers.NewHandler(cfg, configFilePath, authManager)
 	if optionState.localPassword != "" {
 		s.mgmt.SetLocalPassword(optionState.localPassword)
 	}
@@ -517,6 +518,10 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.GET("/usage-statistics-enabled", s.mgmt.GetUsageStatisticsEnabled)
 		mgmt.PUT("/usage-statistics-enabled", s.mgmt.PutUsageStatisticsEnabled)
 		mgmt.PATCH("/usage-statistics-enabled", s.mgmt.PutUsageStatisticsEnabled)
+
+		mgmt.GET("/usage-static-storage-way", s.mgmt.GetUsageStaticStorageWay)
+		mgmt.PUT("/usage-static-storage-way", s.mgmt.PutUsageStaticStorageWay)
+		mgmt.PATCH("/usage-static-storage-way", s.mgmt.PutUsageStaticStorageWay)
 
 		mgmt.GET("/proxy-url", s.mgmt.GetProxyURL)
 		mgmt.PUT("/proxy-url", s.mgmt.PutProxyURL)
@@ -912,8 +917,8 @@ func (s *Server) UpdateClients(cfg *config.Config) {
 	if oldCfg == nil || oldCfg.UsageStatisticsEnabled != cfg.UsageStatisticsEnabled {
 		usage.SetStatisticsEnabled(cfg.UsageStatisticsEnabled)
 	}
-	if oldCfg == nil || oldCfg.AuthDir != cfg.AuthDir {
-		if err := usage.ConfigurePersistentStore(cfg.AuthDir); err != nil {
+	if oldCfg == nil || oldCfg.AuthDir != cfg.AuthDir || oldCfg.UsageStaticStorageWay != cfg.UsageStaticStorageWay {
+		if err := usage.ConfigureStorageWay(cfg.UsageStaticStorageWay, cfg.AuthDir); err != nil {
 			log.Errorf("failed to reconfigure usage statistics store: %v", err)
 		}
 	}

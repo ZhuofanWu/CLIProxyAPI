@@ -193,6 +193,28 @@ func (h *Handler) PutUsageStatisticsEnabled(c *gin.Context) {
 	h.updateBoolField(c, func(v bool) { h.cfg.UsageStatisticsEnabled = v })
 }
 
+// UsageStaticStorageWay
+func (h *Handler) GetUsageStaticStorageWay(c *gin.Context) {
+	value, _ := config.NormalizeUsageStaticStorageWay(h.cfg.UsageStaticStorageWay)
+	c.JSON(200, gin.H{"usage_static_storage_way": value})
+}
+func (h *Handler) PutUsageStaticStorageWay(c *gin.Context) {
+	var body struct {
+		Value *string `json:"value"`
+	}
+	if errBindJSON := c.ShouldBindJSON(&body); errBindJSON != nil || body.Value == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
+		return
+	}
+	normalized, ok := config.NormalizeUsageStaticStorageWay(*body.Value)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid usage_static_storage_way"})
+		return
+	}
+	h.cfg.UsageStaticStorageWay = normalized
+	h.persist(c)
+}
+
 // UsageStatisticsEnabled
 func (h *Handler) GetLoggingToFile(c *gin.Context) {
 	c.JSON(200, gin.H{"logging-to-file": h.cfg.LoggingToFile})

@@ -214,6 +214,7 @@ func (m dashboardModel) renderDashboard(cfg, usage map[string]any, authFiles []m
 		retry := getFloat(cfg, "request-retry")
 		proxyURL := getString(cfg, "proxy-url")
 		loggingToFile := getBool(cfg, "logging-to-file")
+		usageStorageWay := getString(cfg, "usage_static_storage_way")
 		usageEnabled := true
 		if v, ok := cfg["usage-statistics-enabled"]; ok {
 			if b, ok2 := v.(bool); ok2 {
@@ -226,6 +227,7 @@ func (m dashboardModel) renderDashboard(cfg, usage map[string]any, authFiles []m
 			value string
 		}{
 			{T("debug_mode"), boolEmoji(debug)},
+			{"Usage Storage", usageStorageWay},
 			{T("usage_stats"), boolEmoji(usageEnabled)},
 			{T("log_to_file"), boolEmoji(loggingToFile)},
 			{T("retry_count"), fmt.Sprintf("%.0f", retry)},
