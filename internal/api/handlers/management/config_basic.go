@@ -193,12 +193,12 @@ func (h *Handler) PutUsageStatisticsEnabled(c *gin.Context) {
 	h.updateBoolField(c, func(v bool) { h.cfg.UsageStatisticsEnabled = v })
 }
 
-// UsageStaticStorageWay
-func (h *Handler) GetUsageStaticStorageWay(c *gin.Context) {
-	value, _ := config.NormalizeUsageStaticStorageWay(h.cfg.UsageStaticStorageWay)
-	c.JSON(200, gin.H{"usage_static_storage_way": value})
+// UsageStatisticsStorageWay
+func (h *Handler) GetUsageStatisticsStorageWay(c *gin.Context) {
+	value, _ := config.NormalizeUsageStatisticsStorageWay(h.cfg.UsageStatisticsStorageWay)
+	c.JSON(200, gin.H{"usage_statistics_storage_way": value})
 }
-func (h *Handler) PutUsageStaticStorageWay(c *gin.Context) {
+func (h *Handler) PutUsageStatisticsStorageWay(c *gin.Context) {
 	var body struct {
 		Value *string `json:"value"`
 	}
@@ -206,12 +206,12 @@ func (h *Handler) PutUsageStaticStorageWay(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
 		return
 	}
-	normalized, ok := config.NormalizeUsageStaticStorageWay(*body.Value)
+	normalized, ok := config.NormalizeUsageStatisticsStorageWay(*body.Value)
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid usage_static_storage_way"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid usage_statistics_storage_way"})
 		return
 	}
-	h.cfg.UsageStaticStorageWay = normalized
+	h.cfg.UsageStatisticsStorageWay = normalized
 	h.persist(c)
 }
 

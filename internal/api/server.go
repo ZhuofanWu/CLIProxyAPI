@@ -262,7 +262,7 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	managementasset.SetCurrentConfig(cfg)
 	auth.SetQuotaCooldownDisabled(cfg.DisableCooling)
 	usage.SetStatisticsEnabled(cfg.UsageStatisticsEnabled)
-	if err := usage.ConfigureStorageWay(cfg.UsageStaticStorageWay, cfg.AuthDir); err != nil {
+	if err := usage.ConfigureStorageWay(cfg.UsageStatisticsStorageWay, cfg.AuthDir); err != nil {
 		log.Errorf("failed to configure usage statistics store: %v", err)
 	}
 	// Initialize management handler
@@ -519,9 +519,9 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.PUT("/usage-statistics-enabled", s.mgmt.PutUsageStatisticsEnabled)
 		mgmt.PATCH("/usage-statistics-enabled", s.mgmt.PutUsageStatisticsEnabled)
 
-		mgmt.GET("/usage-static-storage-way", s.mgmt.GetUsageStaticStorageWay)
-		mgmt.PUT("/usage-static-storage-way", s.mgmt.PutUsageStaticStorageWay)
-		mgmt.PATCH("/usage-static-storage-way", s.mgmt.PutUsageStaticStorageWay)
+		mgmt.GET("/usage-statistics-storage-way", s.mgmt.GetUsageStatisticsStorageWay)
+		mgmt.PUT("/usage-statistics-storage-way", s.mgmt.PutUsageStatisticsStorageWay)
+		mgmt.PATCH("/usage-statistics-storage-way", s.mgmt.PutUsageStatisticsStorageWay)
 
 		mgmt.GET("/proxy-url", s.mgmt.GetProxyURL)
 		mgmt.PUT("/proxy-url", s.mgmt.PutProxyURL)
@@ -917,8 +917,8 @@ func (s *Server) UpdateClients(cfg *config.Config) {
 	if oldCfg == nil || oldCfg.UsageStatisticsEnabled != cfg.UsageStatisticsEnabled {
 		usage.SetStatisticsEnabled(cfg.UsageStatisticsEnabled)
 	}
-	if oldCfg == nil || oldCfg.AuthDir != cfg.AuthDir || oldCfg.UsageStaticStorageWay != cfg.UsageStaticStorageWay {
-		if err := usage.ConfigureStorageWay(cfg.UsageStaticStorageWay, cfg.AuthDir); err != nil {
+	if oldCfg == nil || oldCfg.AuthDir != cfg.AuthDir || oldCfg.UsageStatisticsStorageWay != cfg.UsageStatisticsStorageWay {
+		if err := usage.ConfigureStorageWay(cfg.UsageStatisticsStorageWay, cfg.AuthDir); err != nil {
 			log.Errorf("failed to reconfigure usage statistics store: %v", err)
 		}
 	}

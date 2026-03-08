@@ -61,9 +61,9 @@ type Config struct {
 	// When exceeded, the oldest error log files are deleted. Default is 10. Set to 0 to disable cleanup.
 	ErrorLogsMaxFiles int `yaml:"error-logs-max-files" json:"error-logs-max-files"`
 
-	// UsageStaticStorageWay selects the usage statistics storage backend.
+	// UsageStatisticsStorageWay selects the usage statistics storage backend.
 	// Supported values: memory, sqlite. Default is memory.
-	UsageStaticStorageWay string `yaml:"usage_static_storage_way" json:"usage_static_storage_way"`
+	UsageStatisticsStorageWay string `yaml:"usage_statistics_storage_way" json:"usage_statistics_storage_way"`
 
 	// UsageStatisticsEnabled toggles persistent usage aggregation; when false, live usage data is discarded.
 	UsageStatisticsEnabled bool `yaml:"usage-statistics-enabled" json:"usage-statistics-enabled"`
@@ -547,7 +547,7 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	cfg.LoggingToFile = false
 	cfg.LogsMaxTotalSizeMB = 0
 	cfg.ErrorLogsMaxFiles = 10
-	cfg.UsageStaticStorageWay = UsageStaticStorageWayMemory
+	cfg.UsageStatisticsStorageWay = UsageStatisticsStorageWayMemory
 	cfg.UsageStatisticsEnabled = false
 	cfg.DisableCooling = false
 	cfg.Pprof.Enable = false
@@ -614,11 +614,11 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 		cfg.MaxRetryCredentials = 0
 	}
 
-	normalizedUsageStorageWay, ok := NormalizeUsageStaticStorageWay(cfg.UsageStaticStorageWay)
+	normalizedUsageStorageWay, ok := NormalizeUsageStatisticsStorageWay(cfg.UsageStatisticsStorageWay)
 	if !ok {
-		return nil, fmt.Errorf("invalid usage_static_storage_way: %q", cfg.UsageStaticStorageWay)
+		return nil, fmt.Errorf("invalid usage_statistics_storage_way: %q", cfg.UsageStatisticsStorageWay)
 	}
-	cfg.UsageStaticStorageWay = normalizedUsageStorageWay
+	cfg.UsageStatisticsStorageWay = normalizedUsageStorageWay
 
 	// Sanitize Gemini API key configuration and migrate legacy entries.
 	cfg.SanitizeGeminiKeys()
@@ -667,17 +667,17 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 }
 
 const (
-	UsageStaticStorageWayMemory = "memory"
-	UsageStaticStorageWaySQLite = "sqlite"
+	UsageStatisticsStorageWayMemory = "memory"
+	UsageStatisticsStorageWaySQLite = "sqlite"
 )
 
-func NormalizeUsageStaticStorageWay(raw string) (string, bool) {
+func NormalizeUsageStatisticsStorageWay(raw string) (string, bool) {
 	normalized := strings.ToLower(strings.TrimSpace(raw))
 	switch normalized {
-	case "", UsageStaticStorageWayMemory:
-		return UsageStaticStorageWayMemory, true
-	case UsageStaticStorageWaySQLite:
-		return UsageStaticStorageWaySQLite, true
+	case "", UsageStatisticsStorageWayMemory:
+		return UsageStatisticsStorageWayMemory, true
+	case UsageStatisticsStorageWaySQLite:
+		return UsageStatisticsStorageWaySQLite, true
 	default:
 		return "", false
 	}

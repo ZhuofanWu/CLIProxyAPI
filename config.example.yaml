@@ -62,7 +62,7 @@ error-logs-max-files: 10
 # Usage statistics storage backend.
 # memory: legacy in-memory behavior; /usage returns full details.
 # sqlite: persist usage into SQLite for backend aggregation and future stats endpoints.
-usage_static_storage_way: memory
+usage_statistics_storage_way: memory
 
 # When false, disable usage statistics aggregation regardless of storage backend.
 usage-statistics-enabled: false

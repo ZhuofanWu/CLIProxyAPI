@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestLoadConfigOptional_DefaultsUsageStorageWayToMemory(t *testing.T) {
+func TestLoadConfigOptional_DefaultsUsageStatisticsStorageWayToMemory(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(configPath, []byte("port: 8080\n"), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -16,18 +16,18 @@ func TestLoadConfigOptional_DefaultsUsageStorageWayToMemory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfigOptional: %v", err)
 	}
-	if cfg.UsageStaticStorageWay != UsageStaticStorageWayMemory {
-		t.Fatalf("UsageStaticStorageWay = %q, want %q", cfg.UsageStaticStorageWay, UsageStaticStorageWayMemory)
+	if cfg.UsageStatisticsStorageWay != UsageStatisticsStorageWayMemory {
+		t.Fatalf("UsageStatisticsStorageWay = %q, want %q", cfg.UsageStatisticsStorageWay, UsageStatisticsStorageWayMemory)
 	}
 }
 
-func TestLoadConfigOptional_RejectsInvalidUsageStorageWay(t *testing.T) {
+func TestLoadConfigOptional_RejectsInvalidUsageStatisticsStorageWay(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(configPath, []byte("port: 8080\nusage_static_storage_way: bad\n"), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte("port: 8080\nusage_statistics_storage_way: bad\n"), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
 	if _, err := LoadConfigOptional(configPath, false); err == nil {
-		t.Fatal("expected invalid usage_static_storage_way to fail")
+		t.Fatal("expected invalid usage_statistics_storage_way to fail")
 	}
 }

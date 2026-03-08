@@ -7,9 +7,9 @@ import (
 )
 
 func TestBuildConfigChangeDetails_UsageStorageWay(t *testing.T) {
-	oldCfg := &config.Config{UsageStaticStorageWay: config.UsageStaticStorageWayMemory}
-	newCfg := &config.Config{UsageStaticStorageWay: config.UsageStaticStorageWaySQLite}
+	oldCfg := &config.Config{UsageStatisticsStorageWay: config.UsageStatisticsStorageWayMemory}
+	newCfg := &config.Config{UsageStatisticsStorageWay: config.UsageStatisticsStorageWaySQLite}
 
 	changes := BuildConfigChangeDetails(oldCfg, newCfg)
-	expectContains(t, changes, "usage_static_storage_way: memory -> sqlite")
+	expectContains(t, changes, "usage_statistics_storage_way: memory -> sqlite")
 }
