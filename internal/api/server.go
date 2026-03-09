@@ -492,6 +492,7 @@ func (s *Server) registerManagementRoutes() {
 	{
 		mgmt.GET("/usage", s.mgmt.GetUsageStatistics)
 		mgmt.GET("/usage/general", s.mgmt.GetUsageGeneral)
+		mgmt.GET("/usage/health", s.mgmt.GetUsageHealth)
 		mgmt.GET("/usage/full", s.mgmt.GetFullUsageStatistics)
 		mgmt.GET("/usage/export", s.mgmt.ExportUsageStatistics)
 		mgmt.POST("/usage/import", s.mgmt.ImportUsageStatistics)

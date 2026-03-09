@@ -404,6 +404,7 @@ func configureUsageSchema(ctx context.Context, db *sql.DB) error {
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_usage_records_api_model_ts ON usage_records (api_name, model_name, timestamp_utc DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_usage_records_ts ON usage_records (timestamp_utc DESC);`,
+		`CREATE INDEX IF NOT EXISTS idx_usage_records_julianday_ts ON usage_records (julianday(timestamp_utc));`,
 	}
 	for _, statement := range statements {
 		if _, err := db.ExecContext(ctx, statement); err != nil {

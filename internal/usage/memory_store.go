@@ -201,6 +201,12 @@ func (s *memoryStore) GeneralContext(ctx context.Context, options GeneralOptions
 	return GeneralSnapshot{}, ErrGeneralUnsupported
 }
 
+func (s *memoryStore) HealthContext(ctx context.Context, options HealthOptions) (HealthSnapshot, error) {
+	_ = ctx
+	_ = options
+	return HealthSnapshot{}, ErrHealthUnsupported
+}
+
 func (s *memoryStore) ExportRecords(ctx context.Context) ([]PersistedRecord, error) {
 	_ = ctx
 	return recordsFromSnapshot(s.Snapshot()), nil

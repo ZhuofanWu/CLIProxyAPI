@@ -22,6 +22,7 @@ const (
 )
 
 var ErrGeneralUnsupported = errors.New("usage general requires sqlite storage")
+var ErrHealthUnsupported = errors.New("usage health requires sqlite storage")
 
 type statisticsStore interface {
 	Record(context.Context, coreusage.Record)
@@ -29,6 +30,7 @@ type statisticsStore interface {
 	SnapshotContext(context.Context) (StatisticsSnapshot, error)
 	SnapshotContextWithOptions(context.Context, SnapshotOptions) (StatisticsSnapshot, error)
 	GeneralContext(context.Context, GeneralOptions) (GeneralSnapshot, error)
+	HealthContext(context.Context, HealthOptions) (HealthSnapshot, error)
 	ExportRecords(context.Context) ([]PersistedRecord, error)
 	MergeRecords(context.Context, []PersistedRecord) (MergeResult, error)
 	MergeSnapshot(StatisticsSnapshot) MergeResult
@@ -218,6 +220,18 @@ func (s *RequestStatistics) GeneralContext(ctx context.Context, options GeneralO
 	return store.GeneralContext(ctx, options)
 }
 
+// HealthContext returns sqlite-only aggregated service health data.
+func (s *RequestStatistics) HealthContext(ctx context.Context, options HealthOptions) (HealthSnapshot, error) {
+	if s == nil {
+		return HealthSnapshot{}, nil
+	}
+	store := s.currentStore()
+	if store == nil {
+		return HealthSnapshot{}, nil
+	}
+	return store.HealthContext(ctx, options)
+}
+
 // ExportRecords exports persisted records when supported by the current backend.
 func (s *RequestStatistics) ExportRecords(ctx context.Context) ([]PersistedRecord, error) {
 	if s == nil {
@@ -402,6 +416,26 @@ type GeneralSeries struct {
 type GeneralSnapshot struct {
 	Summary GeneralSummary `json:"summary"`
 	Series  GeneralSeries  `json:"series"`
+}
+
+// HealthOptions controls how sqlite usage health statistics are materialized.
+type HealthOptions struct {
+	Now time.Time
+}
+
+// HealthSnapshot is the sqlite-only payload returned by /usage/health.
+type HealthSnapshot struct {
+	Rates         []int     `json:"rates"`
+	SuccessCounts []int64   `json:"success_counts"`
+	FailureCounts []int64   `json:"failure_counts"`
+	WindowStart   time.Time `json:"window_start"`
+	WindowEnd     time.Time `json:"window_end"`
+	BucketMinutes int       `json:"bucket_minutes"`
+	Rows          int       `json:"rows"`
+	Cols          int       `json:"cols"`
+	SuccessRate   float64   `json:"success_rate"`
+	TotalSuccess  int64     `json:"total_success"`
+	TotalFailure  int64     `json:"total_failure"`
 }
 
 func resolveAPIIdentifier(ctx context.Context, record coreusage.Record) string {
