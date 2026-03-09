@@ -190,13 +190,15 @@ func TestRequestStatistics_TokenBreakdownContextSQLite(t *testing.T) {
 	if got := len(dailyAll.Buckets); got != tokenBreakdownAllPageDays {
 		t.Fatalf("len(dailyAll.Buckets) = %d, want %d", got, tokenBreakdownAllPageDays)
 	}
-	if !dailyAll.HasOlder {
-		t.Fatalf("dailyAll.HasOlder = false, want true")
+	if dailyAll.HasOlder {
+		t.Fatalf("dailyAll.HasOlder = true, want false")
 	}
-	if dailyAll.Buckets[0].Label != "2026-02-23" || dailyAll.Buckets[len(dailyAll.Buckets)-1].Label != "2026-03-09" {
-		t.Fatalf("dailyAll labels = (%s,%s), want (2026-02-23,2026-03-09)", dailyAll.Buckets[0].Label, dailyAll.Buckets[len(dailyAll.Buckets)-1].Label)
+	if dailyAll.Buckets[0].Label != "2026-02-08" || dailyAll.Buckets[len(dailyAll.Buckets)-1].Label != "2026-03-09" {
+		t.Fatalf("dailyAll labels = (%s,%s), want (2026-02-08,2026-03-09)", dailyAll.Buckets[0].Label, dailyAll.Buckets[len(dailyAll.Buckets)-1].Label)
 	}
-	assertTokenBreakdownBucket(t, dailyAll, "2026-02-23", 0, 0, 0, 0)
+	assertTokenBreakdownBucket(t, dailyAll, "2026-02-08", 0, 0, 0, 0)
+	assertTokenBreakdownBucket(t, dailyAll, "2026-02-10", 5, 4, 0, 0)
+	assertTokenBreakdownBucket(t, dailyAll, "2026-02-22", 9, 9, 1, 1)
 	assertTokenBreakdownBucket(t, dailyAll, "2026-03-05", 1, 2, 0, 4)
 	assertTokenBreakdownBucket(t, dailyAll, "2026-03-09", 16, 28, 4, 3)
 
@@ -212,15 +214,15 @@ func TestRequestStatistics_TokenBreakdownContextSQLite(t *testing.T) {
 	if dailyOlderPage.HasOlder {
 		t.Fatalf("dailyOlderPage.HasOlder = true, want false")
 	}
-	if dailyOlderPage.Buckets[0].Label != "2026-02-08" || dailyOlderPage.Buckets[len(dailyOlderPage.Buckets)-1].Label != "2026-02-22" {
+	if dailyOlderPage.Buckets[0].Label != "2026-01-09" || dailyOlderPage.Buckets[len(dailyOlderPage.Buckets)-1].Label != "2026-02-07" {
 		t.Fatalf(
-			"dailyOlderPage labels = (%s,%s), want (2026-02-08,2026-02-22)",
+			"dailyOlderPage labels = (%s,%s), want (2026-01-09,2026-02-07)",
 			dailyOlderPage.Buckets[0].Label,
 			dailyOlderPage.Buckets[len(dailyOlderPage.Buckets)-1].Label,
 		)
 	}
-	assertTokenBreakdownBucket(t, dailyOlderPage, "2026-02-10", 5, 4, 0, 0)
-	assertTokenBreakdownBucket(t, dailyOlderPage, "2026-02-22", 9, 9, 1, 1)
+	assertTokenBreakdownBucket(t, dailyOlderPage, "2026-01-09", 0, 0, 0, 0)
+	assertTokenBreakdownBucket(t, dailyOlderPage, "2026-02-07", 0, 0, 0, 0)
 }
 
 func assertTokenBreakdownBucket(

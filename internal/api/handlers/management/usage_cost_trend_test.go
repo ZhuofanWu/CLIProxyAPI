@@ -91,8 +91,8 @@ func TestGetUsageCostTrend_SQLiteReturnsSnapshot(t *testing.T) {
 		t.Fatalf("range = %v, want all", payload["range"])
 	}
 	buckets, ok := payload["buckets"].([]any)
-	if !ok || len(buckets) != 15 {
-		t.Fatalf("buckets = %#v, want len 15", payload["buckets"])
+	if !ok || len(buckets) != 30 {
+		t.Fatalf("buckets = %#v, want len 30", payload["buckets"])
 	}
 }
 

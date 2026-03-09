@@ -18,7 +18,7 @@ const (
 	tokenBreakdownRange7d  = "7d"
 	tokenBreakdownRangeAll = "all"
 
-	tokenBreakdownAllPageDays = 15
+	tokenBreakdownAllPageDays = 30
 )
 
 type tokenBreakdownRow struct {

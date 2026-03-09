@@ -173,9 +173,14 @@ func TestRequestStatistics_CostTrendContextSQLite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("daily all cost trend: %v", err)
 	}
-	if !dailyAll.HasOlder {
-		t.Fatalf("dailyAll.HasOlder = false, want true")
+	if got := len(dailyAll.Buckets); got != tokenBreakdownAllPageDays {
+		t.Fatalf("len(dailyAll.Buckets) = %d, want %d", got, tokenBreakdownAllPageDays)
 	}
+	if dailyAll.HasOlder {
+		t.Fatalf("dailyAll.HasOlder = true, want false")
+	}
+	assertCostTrendBucket(t, dailyAll, "2026-02-10", 6)
+	assertCostTrendBucket(t, dailyAll, "2026-02-22", 3)
 	assertCostTrendBucket(t, dailyAll, "2026-03-05", 4)
 	assertCostTrendBucket(t, dailyAll, "2026-03-09", 16.5)
 
@@ -192,8 +197,8 @@ func TestRequestStatistics_CostTrendContextSQLite(t *testing.T) {
 	if dailyOlderPage.HasOlder {
 		t.Fatalf("dailyOlderPage.HasOlder = true, want false")
 	}
-	assertCostTrendBucket(t, dailyOlderPage, "2026-02-10", 6)
-	assertCostTrendBucket(t, dailyOlderPage, "2026-02-22", 3)
+	assertCostTrendBucket(t, dailyOlderPage, "2026-01-09", 0)
+	assertCostTrendBucket(t, dailyOlderPage, "2026-02-07", 0)
 }
 
 func assertCostTrendBucket(t *testing.T, snapshot CostTrendSnapshot, label string, cost float64) {
