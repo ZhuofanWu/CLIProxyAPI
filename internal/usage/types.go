@@ -25,6 +25,7 @@ var ErrGeneralUnsupported = errors.New("usage general requires sqlite storage")
 var ErrHealthUnsupported = errors.New("usage health requires sqlite storage")
 var ErrTokenBreakdownUnsupported = errors.New("usage token breakdown requires sqlite storage")
 var ErrCostTrendUnsupported = errors.New("usage cost trend requires sqlite storage")
+var ErrRankingsUnsupported = errors.New("usage rankings requires sqlite storage")
 
 type statisticsStore interface {
 	Record(context.Context, coreusage.Record)
@@ -35,6 +36,7 @@ type statisticsStore interface {
 	HealthContext(context.Context, HealthOptions) (HealthSnapshot, error)
 	TokenBreakdownContext(context.Context, TokenBreakdownOptions) (TokenBreakdownSnapshot, error)
 	CostTrendContext(context.Context, CostTrendOptions) (CostTrendSnapshot, error)
+	RankingsContext(context.Context, RankingsOptions) (RankingsSnapshot, error)
 	ExportRecords(context.Context) ([]PersistedRecord, error)
 	MergeRecords(context.Context, []PersistedRecord) (MergeResult, error)
 	MergeSnapshot(StatisticsSnapshot) MergeResult
@@ -264,6 +266,21 @@ func (s *RequestStatistics) CostTrendContext(
 		return CostTrendSnapshot{}, nil
 	}
 	return store.CostTrendContext(ctx, options)
+}
+
+// RankingsContext returns sqlite-only aggregated ranking data for the usage page.
+func (s *RequestStatistics) RankingsContext(
+	ctx context.Context,
+	options RankingsOptions,
+) (RankingsSnapshot, error) {
+	if s == nil {
+		return RankingsSnapshot{}, nil
+	}
+	store := s.currentStore()
+	if store == nil {
+		return RankingsSnapshot{}, nil
+	}
+	return store.RankingsContext(ctx, options)
 }
 
 // ExportRecords exports persisted records when supported by the current backend.
@@ -520,6 +537,49 @@ type CostTrendSnapshot struct {
 	Offset      int               `json:"offset"`
 	HasOlder    bool              `json:"has_older"`
 	Buckets     []CostTrendBucket `json:"buckets"`
+}
+
+// RankingsOptions controls how sqlite usage ranking data is materialized.
+type RankingsOptions struct {
+	Since       time.Time
+	Now         time.Time
+	ModelPrices map[string]ModelPrice
+}
+
+// APIRankingModel captures one model row nested under an API ranking item.
+type APIRankingModel struct {
+	ModelName    string `json:"model_name"`
+	Requests     int64  `json:"requests"`
+	SuccessCount int64  `json:"success_count"`
+	FailureCount int64  `json:"failure_count"`
+	Tokens       int64  `json:"tokens"`
+}
+
+// APIRanking contains aggregated data for the API details ranking card.
+type APIRanking struct {
+	APIName       string            `json:"api_name"`
+	TotalRequests int64             `json:"total_requests"`
+	SuccessCount  int64             `json:"success_count"`
+	FailureCount  int64             `json:"failure_count"`
+	TotalTokens   int64             `json:"total_tokens"`
+	TotalCost     float64           `json:"total_cost"`
+	Models        []APIRankingModel `json:"models"`
+}
+
+// ModelRanking contains aggregated data for the model statistics ranking card.
+type ModelRanking struct {
+	ModelName    string  `json:"model_name"`
+	Requests     int64   `json:"requests"`
+	SuccessCount int64   `json:"success_count"`
+	FailureCount int64   `json:"failure_count"`
+	Tokens       int64   `json:"tokens"`
+	Cost         float64 `json:"cost"`
+}
+
+// RankingsSnapshot is the sqlite-only payload returned by /usage/rankings.
+type RankingsSnapshot struct {
+	APIRankings   []APIRanking   `json:"api_rankings"`
+	ModelRankings []ModelRanking `json:"model_rankings"`
 }
 
 func resolveAPIIdentifier(ctx context.Context, record coreusage.Record) string {

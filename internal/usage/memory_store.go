@@ -225,6 +225,15 @@ func (s *memoryStore) CostTrendContext(
 	return CostTrendSnapshot{}, ErrCostTrendUnsupported
 }
 
+func (s *memoryStore) RankingsContext(
+	ctx context.Context,
+	options RankingsOptions,
+) (RankingsSnapshot, error) {
+	_ = ctx
+	_ = options
+	return RankingsSnapshot{}, ErrRankingsUnsupported
+}
+
 func (s *memoryStore) ExportRecords(ctx context.Context) ([]PersistedRecord, error) {
 	_ = ctx
 	return recordsFromSnapshot(s.Snapshot()), nil
