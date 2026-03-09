@@ -2,6 +2,7 @@ package usage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -20,11 +21,14 @@ const (
 	usageExportVersionV2  = 2
 )
 
+var ErrGeneralUnsupported = errors.New("usage general requires sqlite storage")
+
 type statisticsStore interface {
 	Record(context.Context, coreusage.Record)
 	Snapshot() StatisticsSnapshot
 	SnapshotContext(context.Context) (StatisticsSnapshot, error)
 	SnapshotContextWithOptions(context.Context, SnapshotOptions) (StatisticsSnapshot, error)
+	GeneralContext(context.Context, GeneralOptions) (GeneralSnapshot, error)
 	ExportRecords(context.Context) ([]PersistedRecord, error)
 	MergeRecords(context.Context, []PersistedRecord) (MergeResult, error)
 	MergeSnapshot(StatisticsSnapshot) MergeResult
@@ -202,6 +206,18 @@ func (s *RequestStatistics) SnapshotContextWithOptions(ctx context.Context, opti
 	return store.SnapshotContextWithOptions(ctx, options)
 }
 
+// GeneralContext returns sqlite-only aggregated usage overview data.
+func (s *RequestStatistics) GeneralContext(ctx context.Context, options GeneralOptions) (GeneralSnapshot, error) {
+	if s == nil {
+		return GeneralSnapshot{}, nil
+	}
+	store := s.currentStore()
+	if store == nil {
+		return GeneralSnapshot{}, nil
+	}
+	return store.GeneralContext(ctx, options)
+}
+
 // ExportRecords exports persisted records when supported by the current backend.
 func (s *RequestStatistics) ExportRecords(ctx context.Context) ([]PersistedRecord, error) {
 	if s == nil {
@@ -335,6 +351,57 @@ type MergeResult struct {
 type SnapshotOptions struct {
 	Since       time.Time
 	DetailLimit int
+}
+
+// ModelPrice captures backend pricing used by sqlite-only usage aggregations.
+type ModelPrice struct {
+	PromptMilli     int64
+	CompletionMilli int64
+	CacheMilli      int64
+}
+
+// GeneralOptions controls how sqlite usage general statistics are materialized.
+type GeneralOptions struct {
+	Since       time.Time
+	Now         time.Time
+	ModelPrices map[string]ModelPrice
+}
+
+// GeneralPoint is a timestamped numeric point for usage overview sparklines.
+type GeneralPoint struct {
+	Timestamp time.Time `json:"ts"`
+	Value     float64   `json:"value"`
+}
+
+// GeneralSummary contains the overview card values and supporting metadata.
+type GeneralSummary struct {
+	TotalRequests      int64   `json:"total_requests"`
+	SuccessCount       int64   `json:"success_count"`
+	FailureCount       int64   `json:"failure_count"`
+	TotalTokens        int64   `json:"total_tokens"`
+	CachedTokens       int64   `json:"cached_tokens"`
+	ReasoningTokens    int64   `json:"reasoning_tokens"`
+	RPM30m             float64 `json:"rpm_30m"`
+	RPMRequestCount30m int64   `json:"rpm_request_count_30m"`
+	TPM30m             float64 `json:"tpm_30m"`
+	TPMTokenCount30m   int64   `json:"tpm_token_count_30m"`
+	TotalCost          float64 `json:"total_cost"`
+	CostAvailable      bool    `json:"cost_available"`
+}
+
+// GeneralSeries contains sqlite-only minute-level series for the usage overview cards.
+type GeneralSeries struct {
+	Requests60m []GeneralPoint `json:"requests_60m"`
+	Tokens60m   []GeneralPoint `json:"tokens_60m"`
+	RPM30m      []GeneralPoint `json:"rpm_30m"`
+	TPM30m      []GeneralPoint `json:"tpm_30m"`
+	Cost30m     []GeneralPoint `json:"cost_30m"`
+}
+
+// GeneralSnapshot is the sqlite-only payload returned by /usage/general.
+type GeneralSnapshot struct {
+	Summary GeneralSummary `json:"summary"`
+	Series  GeneralSeries  `json:"series"`
 }
 
 func resolveAPIIdentifier(ctx context.Context, record coreusage.Record) string {
