@@ -207,6 +207,15 @@ func (s *memoryStore) HealthContext(ctx context.Context, options HealthOptions) 
 	return HealthSnapshot{}, ErrHealthUnsupported
 }
 
+func (s *memoryStore) TokenBreakdownContext(
+	ctx context.Context,
+	options TokenBreakdownOptions,
+) (TokenBreakdownSnapshot, error) {
+	_ = ctx
+	_ = options
+	return TokenBreakdownSnapshot{}, ErrTokenBreakdownUnsupported
+}
+
 func (s *memoryStore) ExportRecords(ctx context.Context) ([]PersistedRecord, error) {
 	_ = ctx
 	return recordsFromSnapshot(s.Snapshot()), nil

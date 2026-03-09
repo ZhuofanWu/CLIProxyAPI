@@ -23,6 +23,7 @@ const (
 
 var ErrGeneralUnsupported = errors.New("usage general requires sqlite storage")
 var ErrHealthUnsupported = errors.New("usage health requires sqlite storage")
+var ErrTokenBreakdownUnsupported = errors.New("usage token breakdown requires sqlite storage")
 
 type statisticsStore interface {
 	Record(context.Context, coreusage.Record)
@@ -31,6 +32,7 @@ type statisticsStore interface {
 	SnapshotContextWithOptions(context.Context, SnapshotOptions) (StatisticsSnapshot, error)
 	GeneralContext(context.Context, GeneralOptions) (GeneralSnapshot, error)
 	HealthContext(context.Context, HealthOptions) (HealthSnapshot, error)
+	TokenBreakdownContext(context.Context, TokenBreakdownOptions) (TokenBreakdownSnapshot, error)
 	ExportRecords(context.Context) ([]PersistedRecord, error)
 	MergeRecords(context.Context, []PersistedRecord) (MergeResult, error)
 	MergeSnapshot(StatisticsSnapshot) MergeResult
@@ -230,6 +232,21 @@ func (s *RequestStatistics) HealthContext(ctx context.Context, options HealthOpt
 		return HealthSnapshot{}, nil
 	}
 	return store.HealthContext(ctx, options)
+}
+
+// TokenBreakdownContext returns sqlite-only token breakdown buckets for the usage page.
+func (s *RequestStatistics) TokenBreakdownContext(
+	ctx context.Context,
+	options TokenBreakdownOptions,
+) (TokenBreakdownSnapshot, error) {
+	if s == nil {
+		return TokenBreakdownSnapshot{}, nil
+	}
+	store := s.currentStore()
+	if store == nil {
+		return TokenBreakdownSnapshot{}, nil
+	}
+	return store.TokenBreakdownContext(ctx, options)
 }
 
 // ExportRecords exports persisted records when supported by the current backend.
@@ -436,6 +453,32 @@ type HealthSnapshot struct {
 	SuccessRate   float64   `json:"success_rate"`
 	TotalSuccess  int64     `json:"total_success"`
 	TotalFailure  int64     `json:"total_failure"`
+}
+
+// TokenBreakdownOptions controls how sqlite token breakdown buckets are materialized.
+type TokenBreakdownOptions struct {
+	Granularity string
+	Range       string
+	Offset      int
+	Now         time.Time
+}
+
+// TokenBreakdownBucket contains one bucket of aggregated token usage.
+type TokenBreakdownBucket struct {
+	Label           string `json:"label"`
+	InputTokens     int64  `json:"input_tokens"`
+	OutputTokens    int64  `json:"output_tokens"`
+	CachedTokens    int64  `json:"cached_tokens"`
+	ReasoningTokens int64  `json:"reasoning_tokens"`
+}
+
+// TokenBreakdownSnapshot is the sqlite-only payload returned by /usage/token-breakdown.
+type TokenBreakdownSnapshot struct {
+	Granularity string                 `json:"granularity"`
+	Range       string                 `json:"range"`
+	Offset      int                    `json:"offset"`
+	HasOlder    bool                   `json:"has_older"`
+	Buckets     []TokenBreakdownBucket `json:"buckets"`
 }
 
 func resolveAPIIdentifier(ctx context.Context, record coreusage.Record) string {
