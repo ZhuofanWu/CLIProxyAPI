@@ -24,6 +24,7 @@ const (
 var ErrGeneralUnsupported = errors.New("usage general requires sqlite storage")
 var ErrHealthUnsupported = errors.New("usage health requires sqlite storage")
 var ErrTokenBreakdownUnsupported = errors.New("usage token breakdown requires sqlite storage")
+var ErrCostTrendUnsupported = errors.New("usage cost trend requires sqlite storage")
 
 type statisticsStore interface {
 	Record(context.Context, coreusage.Record)
@@ -33,6 +34,7 @@ type statisticsStore interface {
 	GeneralContext(context.Context, GeneralOptions) (GeneralSnapshot, error)
 	HealthContext(context.Context, HealthOptions) (HealthSnapshot, error)
 	TokenBreakdownContext(context.Context, TokenBreakdownOptions) (TokenBreakdownSnapshot, error)
+	CostTrendContext(context.Context, CostTrendOptions) (CostTrendSnapshot, error)
 	ExportRecords(context.Context) ([]PersistedRecord, error)
 	MergeRecords(context.Context, []PersistedRecord) (MergeResult, error)
 	MergeSnapshot(StatisticsSnapshot) MergeResult
@@ -247,6 +249,21 @@ func (s *RequestStatistics) TokenBreakdownContext(
 		return TokenBreakdownSnapshot{}, nil
 	}
 	return store.TokenBreakdownContext(ctx, options)
+}
+
+// CostTrendContext returns sqlite-only cost trend buckets for the usage page.
+func (s *RequestStatistics) CostTrendContext(
+	ctx context.Context,
+	options CostTrendOptions,
+) (CostTrendSnapshot, error) {
+	if s == nil {
+		return CostTrendSnapshot{}, nil
+	}
+	store := s.currentStore()
+	if store == nil {
+		return CostTrendSnapshot{}, nil
+	}
+	return store.CostTrendContext(ctx, options)
 }
 
 // ExportRecords exports persisted records when supported by the current backend.
@@ -479,6 +496,30 @@ type TokenBreakdownSnapshot struct {
 	Offset      int                    `json:"offset"`
 	HasOlder    bool                   `json:"has_older"`
 	Buckets     []TokenBreakdownBucket `json:"buckets"`
+}
+
+// CostTrendOptions controls how sqlite cost trend buckets are materialized.
+type CostTrendOptions struct {
+	Granularity string
+	Range       string
+	Offset      int
+	Now         time.Time
+	ModelPrices map[string]ModelPrice
+}
+
+// CostTrendBucket contains one bucket of aggregated cost.
+type CostTrendBucket struct {
+	Label string  `json:"label"`
+	Cost  float64 `json:"cost"`
+}
+
+// CostTrendSnapshot is the sqlite-only payload returned by /usage/cost-trend.
+type CostTrendSnapshot struct {
+	Granularity string            `json:"granularity"`
+	Range       string            `json:"range"`
+	Offset      int               `json:"offset"`
+	HasOlder    bool              `json:"has_older"`
+	Buckets     []CostTrendBucket `json:"buckets"`
 }
 
 func resolveAPIIdentifier(ctx context.Context, record coreusage.Record) string {

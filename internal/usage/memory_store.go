@@ -216,6 +216,15 @@ func (s *memoryStore) TokenBreakdownContext(
 	return TokenBreakdownSnapshot{}, ErrTokenBreakdownUnsupported
 }
 
+func (s *memoryStore) CostTrendContext(
+	ctx context.Context,
+	options CostTrendOptions,
+) (CostTrendSnapshot, error) {
+	_ = ctx
+	_ = options
+	return CostTrendSnapshot{}, ErrCostTrendUnsupported
+}
+
 func (s *memoryStore) ExportRecords(ctx context.Context) ([]PersistedRecord, error) {
 	_ = ctx
 	return recordsFromSnapshot(s.Snapshot()), nil

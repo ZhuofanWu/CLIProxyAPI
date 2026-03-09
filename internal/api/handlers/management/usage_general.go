@@ -3,7 +3,6 @@ package management
 import (
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -23,25 +22,10 @@ func (h *Handler) GetUsageGeneral(c *gin.Context) {
 		return
 	}
 
-	modelPrices := make(map[string]usage.ModelPrice)
-	if h.cfg != nil {
-		for _, item := range h.cfg.ModelPrice {
-			name := strings.TrimSpace(item.Name)
-			if name == "" {
-				continue
-			}
-			modelPrices[name] = usage.ModelPrice{
-				PromptMilli:     item.Input.Milli(),
-				CompletionMilli: item.Output.Milli(),
-				CacheMilli:      item.CacheRead.Milli(),
-			}
-		}
-	}
-
 	general, err := h.usageStats.GeneralContext(c.Request.Context(), usage.GeneralOptions{
 		Since:       snapshotOptions.Since,
 		Now:         time.Now().UTC(),
-		ModelPrices: modelPrices,
+		ModelPrices: h.buildUsageModelPrices(),
 	})
 	if err != nil {
 		if errors.Is(err, usage.ErrGeneralUnsupported) {
