@@ -63,6 +63,10 @@ func (s *sqliteStore) Configure(authDir string) error {
 		_ = db.Close()
 		return fmt.Errorf("usage statistics: ping database: %w", err)
 	}
+	if err := configureUsageDatabase(ctx, db); err != nil {
+		_ = db.Close()
+		return err
+	}
 	if err := configureUsageSchema(ctx, db); err != nil {
 		_ = db.Close()
 		return err
@@ -339,13 +343,24 @@ func openUsageDatabase(path string) (*sql.DB, error) {
 
 func configureUsageConnection(ctx context.Context, db *sql.DB) error {
 	statements := []string{
-		`PRAGMA journal_mode = WAL;`,
-		`PRAGMA synchronous = FULL;`,
 		`PRAGMA busy_timeout = 5000;`,
 	}
 	for _, statement := range statements {
 		if _, err := db.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("usage statistics: configure connection: %w", err)
+		}
+	}
+	return nil
+}
+
+func configureUsageDatabase(ctx context.Context, db *sql.DB) error {
+	statements := []string{
+		`PRAGMA journal_mode = WAL;`,
+		`PRAGMA synchronous = FULL;`,
+	}
+	for _, statement := range statements {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("usage statistics: configure database: %w", err)
 		}
 	}
 	return nil

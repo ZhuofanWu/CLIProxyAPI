@@ -333,6 +333,41 @@ func TestOpenUsageDatabase_ConfiguresBusyTimeout(t *testing.T) {
 	}
 }
 
+func TestOpenUsageDatabase_DoesNotFailWhenAnotherConnectionHoldsWriteLock(t *testing.T) {
+	stats := NewRequestStatistics()
+	if err := stats.Configure(t.TempDir()); err != nil {
+		t.Fatalf("configure stats: %v", err)
+	}
+	t.Cleanup(func() { _ = stats.Close() })
+
+	writerDB, err := openUsageDatabase(stats.DatabasePath())
+	if err != nil {
+		t.Fatalf("open writer database: %v", err)
+	}
+	defer writerDB.Close()
+
+	if _, err := writerDB.Exec(`BEGIN IMMEDIATE;`); err != nil {
+		t.Fatalf("begin immediate: %v", err)
+	}
+	defer func() {
+		_, _ = writerDB.Exec(`ROLLBACK;`)
+	}()
+
+	readerDB, err := openUsageDatabase(stats.DatabasePath())
+	if err != nil {
+		t.Fatalf("open second database while locked: %v", err)
+	}
+	defer readerDB.Close()
+
+	var timeout int
+	if err := readerDB.QueryRow(`PRAGMA busy_timeout;`).Scan(&timeout); err != nil {
+		t.Fatalf("query second connection busy_timeout: %v", err)
+	}
+	if timeout != 5000 {
+		t.Fatalf("second connection busy_timeout = %d, want 5000", timeout)
+	}
+}
+
 func TestRequestStatistics_RecordIgnoresCanceledRequestContext(t *testing.T) {
 	original := StatisticsEnabled()
 	SetStatisticsEnabled(true)
