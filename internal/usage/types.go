@@ -24,6 +24,7 @@ const (
 var ErrGeneralUnsupported = errors.New("usage general requires sqlite storage")
 var ErrHealthUnsupported = errors.New("usage health requires sqlite storage")
 var ErrCredentialsUnsupported = errors.New("usage credentials requires sqlite storage")
+var ErrEventsUnsupported = errors.New("usage events requires sqlite storage")
 var ErrTokenBreakdownUnsupported = errors.New("usage token breakdown requires sqlite storage")
 var ErrCostTrendUnsupported = errors.New("usage cost trend requires sqlite storage")
 var ErrRankingsUnsupported = errors.New("usage rankings requires sqlite storage")
@@ -36,6 +37,7 @@ type statisticsStore interface {
 	GeneralContext(context.Context, GeneralOptions) (GeneralSnapshot, error)
 	HealthContext(context.Context, HealthOptions) (HealthSnapshot, error)
 	CredentialsContext(context.Context, CredentialsOptions) (CredentialUsageSnapshot, error)
+	EventsContext(context.Context, UsageEventsOptions) (UsageEventsSnapshot, error)
 	TokenBreakdownContext(context.Context, TokenBreakdownOptions) (TokenBreakdownSnapshot, error)
 	CostTrendContext(context.Context, CostTrendOptions) (CostTrendSnapshot, error)
 	RankingsContext(context.Context, RankingsOptions) (RankingsSnapshot, error)
@@ -253,6 +255,21 @@ func (s *RequestStatistics) CredentialsContext(
 		return CredentialUsageSnapshot{}, nil
 	}
 	return store.CredentialsContext(ctx, options)
+}
+
+// EventsContext returns sqlite-only request event detail data for the usage page.
+func (s *RequestStatistics) EventsContext(
+	ctx context.Context,
+	options UsageEventsOptions,
+) (UsageEventsSnapshot, error) {
+	if s == nil {
+		return UsageEventsSnapshot{}, nil
+	}
+	store := s.currentStore()
+	if store == nil {
+		return UsageEventsSnapshot{}, nil
+	}
+	return store.EventsContext(ctx, options)
 }
 
 // TokenBreakdownContext returns sqlite-only token breakdown buckets for the usage page.
@@ -530,6 +547,40 @@ type CredentialUsageSnapshot struct {
 	Range       string                `json:"range"`
 	PercentData bool                  `json:"percentdata"`
 	Credentials []CredentialUsageItem `json:"credentials"`
+}
+
+// UsageEventsOptions controls how sqlite request event detail rows are materialized.
+type UsageEventsOptions struct {
+	Since     time.Time
+	Now       time.Time
+	ModelName string
+	Source    string
+	AuthIndex string
+	Success   *bool
+	Page      int
+	PageSize  int
+}
+
+// UsageEventItem contains one paginated request event row.
+type UsageEventItem struct {
+	APIName   string     `json:"api_name"`
+	ModelName string     `json:"model_name"`
+	Timestamp time.Time  `json:"timestamp"`
+	Source    string     `json:"source"`
+	AuthIndex string     `json:"auth_index"`
+	Failed    bool       `json:"failed"`
+	Tokens    TokenStats `json:"tokens"`
+}
+
+// UsageEventsSnapshot is the sqlite-only payload returned by /usage/events.
+type UsageEventsSnapshot struct {
+	Page       int              `json:"page"`
+	PageSize   int              `json:"page_size"`
+	Total      int64            `json:"total"`
+	TotalPages int              `json:"total_pages"`
+	HasPrev    bool             `json:"has_prev"`
+	HasNext    bool             `json:"has_next"`
+	Items      []UsageEventItem `json:"items"`
 }
 
 // TokenBreakdownOptions controls how sqlite token breakdown buckets are materialized.

@@ -491,6 +491,7 @@ func (s *Server) registerManagementRoutes() {
 	mgmt.Use(s.managementAvailabilityMiddleware(), s.mgmt.Middleware())
 	{
 		mgmt.GET("/usage", s.mgmt.GetUsageStatistics)
+		mgmt.GET("/usage/events", s.mgmt.GetUsageEvents)
 		mgmt.GET("/usage/general", s.mgmt.GetUsageGeneral)
 		mgmt.GET("/usage/health", s.mgmt.GetUsageHealth)
 		mgmt.GET("/usage/credentials", s.mgmt.GetUsageCredentials)

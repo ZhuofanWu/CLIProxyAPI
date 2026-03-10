@@ -216,6 +216,15 @@ func (s *memoryStore) CredentialsContext(
 	return CredentialUsageSnapshot{}, ErrCredentialsUnsupported
 }
 
+func (s *memoryStore) EventsContext(
+	ctx context.Context,
+	options UsageEventsOptions,
+) (UsageEventsSnapshot, error) {
+	_ = ctx
+	_ = options
+	return UsageEventsSnapshot{}, ErrEventsUnsupported
+}
+
 func (s *memoryStore) TokenBreakdownContext(
 	ctx context.Context,
 	options TokenBreakdownOptions,
