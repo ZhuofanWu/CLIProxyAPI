@@ -25,6 +25,8 @@ var ErrGeneralUnsupported = errors.New("usage general requires sqlite storage")
 var ErrHealthUnsupported = errors.New("usage health requires sqlite storage")
 var ErrCredentialsUnsupported = errors.New("usage credentials requires sqlite storage")
 var ErrEventsUnsupported = errors.New("usage events requires sqlite storage")
+var ErrTrendUnsupported = errors.New("usage trends require sqlite storage")
+var ErrTrendModelsUnsupported = errors.New("usage trend models require sqlite storage")
 var ErrTokenBreakdownUnsupported = errors.New("usage token breakdown requires sqlite storage")
 var ErrCostTrendUnsupported = errors.New("usage cost trend requires sqlite storage")
 var ErrRankingsUnsupported = errors.New("usage rankings requires sqlite storage")
@@ -38,6 +40,8 @@ type statisticsStore interface {
 	HealthContext(context.Context, HealthOptions) (HealthSnapshot, error)
 	CredentialsContext(context.Context, CredentialsOptions) (CredentialUsageSnapshot, error)
 	EventsContext(context.Context, UsageEventsOptions) (UsageEventsSnapshot, error)
+	TrendContext(context.Context, TrendOptions) (TrendSnapshot, error)
+	TrendModelsContext(context.Context, TrendModelsOptions) (TrendModelsSnapshot, error)
 	TokenBreakdownContext(context.Context, TokenBreakdownOptions) (TokenBreakdownSnapshot, error)
 	CostTrendContext(context.Context, CostTrendOptions) (CostTrendSnapshot, error)
 	RankingsContext(context.Context, RankingsOptions) (RankingsSnapshot, error)
@@ -270,6 +274,36 @@ func (s *RequestStatistics) EventsContext(
 		return UsageEventsSnapshot{}, nil
 	}
 	return store.EventsContext(ctx, options)
+}
+
+// TrendContext returns sqlite-only model trend data for the usage page charts.
+func (s *RequestStatistics) TrendContext(
+	ctx context.Context,
+	options TrendOptions,
+) (TrendSnapshot, error) {
+	if s == nil {
+		return TrendSnapshot{}, nil
+	}
+	store := s.currentStore()
+	if store == nil {
+		return TrendSnapshot{}, nil
+	}
+	return store.TrendContext(ctx, options)
+}
+
+// TrendModelsContext returns sqlite-only selectable model names for the usage page charts.
+func (s *RequestStatistics) TrendModelsContext(
+	ctx context.Context,
+	options TrendModelsOptions,
+) (TrendModelsSnapshot, error) {
+	if s == nil {
+		return TrendModelsSnapshot{}, nil
+	}
+	store := s.currentStore()
+	if store == nil {
+		return TrendModelsSnapshot{}, nil
+	}
+	return store.TrendModelsContext(ctx, options)
 }
 
 // TokenBreakdownContext returns sqlite-only token breakdown buckets for the usage page.
@@ -581,6 +615,66 @@ type UsageEventsSnapshot struct {
 	HasPrev    bool             `json:"has_prev"`
 	HasNext    bool             `json:"has_next"`
 	Items      []UsageEventItem `json:"items"`
+}
+
+// TrendOptions controls how sqlite usage chart trend data is materialized.
+type TrendOptions struct {
+	Granularity string
+	Range       string
+	Now         time.Time
+	Models      []string
+}
+
+// TrendSeries contains request and token values for a single model line.
+type TrendSeries struct {
+	ModelName string  `json:"model_name"`
+	IsAll     bool    `json:"is_all"`
+	Requests  []int64 `json:"requests"`
+	Tokens    []int64 `json:"tokens"`
+}
+
+// TrendSnapshot is the sqlite-only aggregated payload used by usage trend handlers.
+type TrendSnapshot struct {
+	Granularity string        `json:"granularity"`
+	Range       string        `json:"range"`
+	Labels      []string      `json:"labels"`
+	Series      []TrendSeries `json:"series"`
+}
+
+// MetricTrendSeries contains one model line for a specific trend metric.
+type MetricTrendSeries struct {
+	ModelName string  `json:"model_name"`
+	IsAll     bool    `json:"is_all"`
+	Values    []int64 `json:"values"`
+}
+
+// MetricTrendSnapshot is the sqlite-only payload returned by trend endpoints.
+type MetricTrendSnapshot struct {
+	Metric      string              `json:"metric"`
+	Granularity string              `json:"granularity"`
+	Range       string              `json:"range"`
+	Labels      []string            `json:"labels"`
+	Series      []MetricTrendSeries `json:"series"`
+}
+
+// TrendModelsOptions controls how sqlite chart model selector data is materialized.
+type TrendModelsOptions struct {
+	Since time.Time
+	Now   time.Time
+	Range string
+}
+
+// TrendModelItem contains one selectable model for sqlite usage trends.
+type TrendModelItem struct {
+	ModelName string `json:"model_name"`
+	Requests  int64  `json:"requests"`
+	Tokens    int64  `json:"tokens"`
+}
+
+// TrendModelsSnapshot is the sqlite-only payload returned by /usage/models.
+type TrendModelsSnapshot struct {
+	Range  string           `json:"range"`
+	Models []TrendModelItem `json:"models"`
 }
 
 // TokenBreakdownOptions controls how sqlite token breakdown buckets are materialized.

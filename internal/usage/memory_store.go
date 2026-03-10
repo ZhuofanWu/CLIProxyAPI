@@ -225,6 +225,24 @@ func (s *memoryStore) EventsContext(
 	return UsageEventsSnapshot{}, ErrEventsUnsupported
 }
 
+func (s *memoryStore) TrendContext(
+	ctx context.Context,
+	options TrendOptions,
+) (TrendSnapshot, error) {
+	_ = ctx
+	_ = options
+	return TrendSnapshot{}, ErrTrendUnsupported
+}
+
+func (s *memoryStore) TrendModelsContext(
+	ctx context.Context,
+	options TrendModelsOptions,
+) (TrendModelsSnapshot, error) {
+	_ = ctx
+	_ = options
+	return TrendModelsSnapshot{}, ErrTrendModelsUnsupported
+}
+
 func (s *memoryStore) TokenBreakdownContext(
 	ctx context.Context,
 	options TokenBreakdownOptions,
