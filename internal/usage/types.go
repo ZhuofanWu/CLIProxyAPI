@@ -23,6 +23,7 @@ const (
 
 var ErrGeneralUnsupported = errors.New("usage general requires sqlite storage")
 var ErrHealthUnsupported = errors.New("usage health requires sqlite storage")
+var ErrCredentialsUnsupported = errors.New("usage credentials requires sqlite storage")
 var ErrTokenBreakdownUnsupported = errors.New("usage token breakdown requires sqlite storage")
 var ErrCostTrendUnsupported = errors.New("usage cost trend requires sqlite storage")
 var ErrRankingsUnsupported = errors.New("usage rankings requires sqlite storage")
@@ -34,6 +35,7 @@ type statisticsStore interface {
 	SnapshotContextWithOptions(context.Context, SnapshotOptions) (StatisticsSnapshot, error)
 	GeneralContext(context.Context, GeneralOptions) (GeneralSnapshot, error)
 	HealthContext(context.Context, HealthOptions) (HealthSnapshot, error)
+	CredentialsContext(context.Context, CredentialsOptions) (CredentialUsageSnapshot, error)
 	TokenBreakdownContext(context.Context, TokenBreakdownOptions) (TokenBreakdownSnapshot, error)
 	CostTrendContext(context.Context, CostTrendOptions) (CostTrendSnapshot, error)
 	RankingsContext(context.Context, RankingsOptions) (RankingsSnapshot, error)
@@ -236,6 +238,21 @@ func (s *RequestStatistics) HealthContext(ctx context.Context, options HealthOpt
 		return HealthSnapshot{}, nil
 	}
 	return store.HealthContext(ctx, options)
+}
+
+// CredentialsContext returns sqlite-only aggregated credential usage data.
+func (s *RequestStatistics) CredentialsContext(
+	ctx context.Context,
+	options CredentialsOptions,
+) (CredentialUsageSnapshot, error) {
+	if s == nil {
+		return CredentialUsageSnapshot{}, nil
+	}
+	store := s.currentStore()
+	if store == nil {
+		return CredentialUsageSnapshot{}, nil
+	}
+	return store.CredentialsContext(ctx, options)
 }
 
 // TokenBreakdownContext returns sqlite-only token breakdown buckets for the usage page.
@@ -487,6 +504,32 @@ type HealthSnapshot struct {
 	SuccessRate   float64   `json:"success_rate"`
 	TotalSuccess  int64     `json:"total_success"`
 	TotalFailure  int64     `json:"total_failure"`
+}
+
+// CredentialsOptions controls how sqlite credential usage data is materialized.
+type CredentialsOptions struct {
+	Since              time.Time
+	Now                time.Time
+	Range              string
+	IncludePercentData bool
+}
+
+// CredentialUsageItem contains aggregated usage for one credential identifier.
+type CredentialUsageItem struct {
+	Source      string          `json:"source"`
+	AuthIndex   string          `json:"auth_index"`
+	Success     int64           `json:"success"`
+	Failure     int64           `json:"failure"`
+	Total       int64           `json:"total"`
+	SuccessRate float64         `json:"success_rate"`
+	Health      *HealthSnapshot `json:"health,omitempty"`
+}
+
+// CredentialUsageSnapshot is the sqlite-only payload returned by /usage/credentials.
+type CredentialUsageSnapshot struct {
+	Range       string                `json:"range"`
+	PercentData bool                  `json:"percentdata"`
+	Credentials []CredentialUsageItem `json:"credentials"`
 }
 
 // TokenBreakdownOptions controls how sqlite token breakdown buckets are materialized.

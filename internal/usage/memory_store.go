@@ -207,6 +207,15 @@ func (s *memoryStore) HealthContext(ctx context.Context, options HealthOptions) 
 	return HealthSnapshot{}, ErrHealthUnsupported
 }
 
+func (s *memoryStore) CredentialsContext(
+	ctx context.Context,
+	options CredentialsOptions,
+) (CredentialUsageSnapshot, error) {
+	_ = ctx
+	_ = options
+	return CredentialUsageSnapshot{}, ErrCredentialsUnsupported
+}
+
 func (s *memoryStore) TokenBreakdownContext(
 	ctx context.Context,
 	options TokenBreakdownOptions,
