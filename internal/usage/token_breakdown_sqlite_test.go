@@ -126,9 +126,9 @@ func TestRequestStatistics_TokenBreakdownContextSQLite(t *testing.T) {
 	if got := len(hourly7h.Buckets); got != 7 {
 		t.Fatalf("len(hourly7h.Buckets) = %d, want 7", got)
 	}
-	assertTokenBreakdownBucket(t, hourly7h, "03-09 06:00", 2, 3, 0, 0)
-	assertTokenBreakdownBucket(t, hourly7h, "03-09 10:00", 4, 5, 1, 2)
-	assertTokenBreakdownBucket(t, hourly7h, "03-09 12:00", 10, 20, 3, 1)
+	assertTokenBreakdownBucket(t, hourly7h, "03-09 14:00", 2, 3, 0, 0)
+	assertTokenBreakdownBucket(t, hourly7h, "03-09 18:00", 4, 5, 1, 2)
+	assertTokenBreakdownBucket(t, hourly7h, "03-09 20:00", 10, 20, 3, 1)
 
 	hourly24h, err := stats.TokenBreakdownContext(context.Background(), TokenBreakdownOptions{
 		Granularity: tokenBreakdownGranularityHour,
@@ -141,7 +141,7 @@ func TestRequestStatistics_TokenBreakdownContextSQLite(t *testing.T) {
 	if got := len(hourly24h.Buckets); got != 24 {
 		t.Fatalf("len(hourly24h.Buckets) = %d, want 24", got)
 	}
-	assertTokenBreakdownBucket(t, hourly24h, "03-08 14:00", 6, 7, 2, 1)
+	assertTokenBreakdownBucket(t, hourly24h, "03-08 22:00", 6, 7, 2, 1)
 	assertNoTokenBreakdownBucket(t, hourly24h, "03-08 09:00")
 
 	dailyCurrent, err := stats.TokenBreakdownContext(context.Background(), TokenBreakdownOptions{
@@ -223,6 +223,68 @@ func TestRequestStatistics_TokenBreakdownContextSQLite(t *testing.T) {
 	}
 	assertTokenBreakdownBucket(t, dailyOlderPage, "2026-01-09", 0, 0, 0, 0)
 	assertTokenBreakdownBucket(t, dailyOlderPage, "2026-02-07", 0, 0, 0, 0)
+}
+
+func TestRequestStatistics_TokenBreakdownContextSQLiteUsesUTCPlus8Buckets(t *testing.T) {
+	original := StatisticsEnabled()
+	SetStatisticsEnabled(true)
+	t.Cleanup(func() { SetStatisticsEnabled(original) })
+
+	stats := NewRequestStatistics()
+	if err := stats.Configure(t.TempDir()); err != nil {
+		t.Fatalf("configure stats: %v", err)
+	}
+	t.Cleanup(func() { _ = stats.Close() })
+
+	now := time.Date(2026, 3, 10, 0, 20, 0, 0, time.UTC)
+	records := []coreusage.Record{
+		{
+			APIKey:      "api-token-boundary",
+			Model:       "model-a",
+			RequestedAt: time.Date(2026, 3, 9, 15, 59, 59, 0, time.UTC),
+			Detail: coreusage.Detail{
+				InputTokens:  1,
+				OutputTokens: 2,
+				TotalTokens:  3,
+			},
+		},
+		{
+			APIKey:      "api-token-boundary",
+			Model:       "model-a",
+			RequestedAt: time.Date(2026, 3, 9, 16, 0, 0, 0, time.UTC),
+			Detail: coreusage.Detail{
+				InputTokens:     3,
+				OutputTokens:    4,
+				CachedTokens:    1,
+				ReasoningTokens: 2,
+				TotalTokens:     10,
+			},
+		},
+	}
+	for _, record := range records {
+		stats.Record(context.Background(), record)
+	}
+
+	hourly, err := stats.TokenBreakdownContext(context.Background(), TokenBreakdownOptions{
+		Granularity: tokenBreakdownGranularityHour,
+		Range:       tokenBreakdownRange24h,
+		Now:         now,
+	})
+	if err != nil {
+		t.Fatalf("hourly boundary breakdown: %v", err)
+	}
+	assertTokenBreakdownBucket(t, hourly, "03-09 23:00", 1, 2, 0, 0)
+	assertTokenBreakdownBucket(t, hourly, "03-10 00:00", 3, 4, 1, 2)
+
+	daily, err := stats.TokenBreakdownContext(context.Background(), TokenBreakdownOptions{
+		Granularity: tokenBreakdownGranularityDay,
+		Range:       tokenBreakdownRange24h,
+		Now:         now,
+	})
+	if err != nil {
+		t.Fatalf("daily boundary breakdown: %v", err)
+	}
+	assertTokenBreakdownBucket(t, daily, "2026-03-10", 3, 4, 1, 2)
 }
 
 func assertTokenBreakdownBucket(

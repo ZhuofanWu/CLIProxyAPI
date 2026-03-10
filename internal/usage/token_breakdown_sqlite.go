@@ -140,18 +140,9 @@ func newTokenBreakdownSnapshot(options TokenBreakdownOptions) (TokenBreakdownSna
 }
 
 func resolveTokenBreakdownWindow(options TokenBreakdownOptions) tokenBreakdownWindow {
+	currentDay := usageChartStartOfDay(options.Now)
 	switch options.Granularity {
 	case tokenBreakdownGranularityDay:
-		currentDay := time.Date(
-			options.Now.Year(),
-			options.Now.Month(),
-			options.Now.Day(),
-			0,
-			0,
-			0,
-			0,
-			time.UTC,
-		)
 		switch options.Range {
 		case tokenBreakdownRange7h, tokenBreakdownRange24h:
 			return tokenBreakdownWindow{
@@ -176,7 +167,7 @@ func resolveTokenBreakdownWindow(options TokenBreakdownOptions) tokenBreakdownWi
 			}
 		}
 	default:
-		currentHour := options.Now.Truncate(time.Hour)
+		currentHour := usageChartStartOfHour(options.Now)
 		bucketCount := 24
 		if options.Range == tokenBreakdownRange7h {
 			bucketCount = 7
@@ -198,17 +189,19 @@ func tokenBreakdownBucketTime(start time.Time, granularity string, offset int) t
 }
 
 func tokenBreakdownBucketKey(granularity string, bucketTime time.Time) string {
+	localTime := usageChartLocalTime(bucketTime)
 	if granularity == tokenBreakdownGranularityDay {
-		return bucketTime.UTC().Format("2006-01-02")
+		return localTime.Format("2006-01-02")
 	}
-	return bucketTime.UTC().Format("2006-01-02T15:00:00Z")
+	return localTime.Format("2006-01-02T15:00:00")
 }
 
 func formatTokenBreakdownBucketLabel(granularity string, bucketTime time.Time) string {
+	localTime := usageChartLocalTime(bucketTime)
 	if granularity == tokenBreakdownGranularityDay {
-		return bucketTime.UTC().Format("2006-01-02")
+		return localTime.Format("2006-01-02")
 	}
-	return bucketTime.UTC().Format("01-02 15:00")
+	return localTime.Format("01-02 15:00")
 }
 
 func queryTokenBreakdownRows(
@@ -217,10 +210,7 @@ func queryTokenBreakdownRows(
 	granularity string,
 	window tokenBreakdownWindow,
 ) ([]tokenBreakdownRow, error) {
-	groupExpr := "date(timestamp_utc)"
-	if granularity == tokenBreakdownGranularityHour {
-		groupExpr = "strftime('%Y-%m-%dT%H:00:00Z', timestamp_utc)"
-	}
+	groupExpr := usageRecordBucketGroupExpr(granularity)
 
 	filter := buildUsageRecordHalfOpenFilter(window.Start, window.End)
 	query := fmt.Sprintf(`

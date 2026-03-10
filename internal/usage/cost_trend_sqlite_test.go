@@ -116,9 +116,9 @@ func TestRequestStatistics_CostTrendContextSQLite(t *testing.T) {
 	if got := len(hourly7h.Buckets); got != 7 {
 		t.Fatalf("len(hourly7h.Buckets) = %d, want 7", got)
 	}
-	assertCostTrendBucket(t, hourly7h, "03-09 06:00", 4)
-	assertCostTrendBucket(t, hourly7h, "03-09 10:00", 5)
-	assertCostTrendBucket(t, hourly7h, "03-09 12:00", 7.5)
+	assertCostTrendBucket(t, hourly7h, "03-09 14:00", 4)
+	assertCostTrendBucket(t, hourly7h, "03-09 18:00", 5)
+	assertCostTrendBucket(t, hourly7h, "03-09 20:00", 7.5)
 
 	hourly24h, err := stats.CostTrendContext(context.Background(), CostTrendOptions{
 		Granularity: tokenBreakdownGranularityHour,
@@ -132,10 +132,10 @@ func TestRequestStatistics_CostTrendContextSQLite(t *testing.T) {
 	if got := len(hourly24h.Buckets); got != 24 {
 		t.Fatalf("len(hourly24h.Buckets) = %d, want 24", got)
 	}
-	assertCostTrendBucket(t, hourly24h, "03-08 14:00", 3)
-	assertCostTrendBucket(t, hourly24h, "03-09 06:00", 4)
-	assertCostTrendBucket(t, hourly24h, "03-09 10:00", 5)
-	assertCostTrendBucket(t, hourly24h, "03-09 12:00", 7.5)
+	assertCostTrendBucket(t, hourly24h, "03-08 22:00", 3)
+	assertCostTrendBucket(t, hourly24h, "03-09 14:00", 4)
+	assertCostTrendBucket(t, hourly24h, "03-09 18:00", 5)
+	assertCostTrendBucket(t, hourly24h, "03-09 20:00", 7.5)
 
 	dailyCurrent, err := stats.CostTrendContext(context.Background(), CostTrendOptions{
 		Granularity: tokenBreakdownGranularityDay,
@@ -199,6 +199,72 @@ func TestRequestStatistics_CostTrendContextSQLite(t *testing.T) {
 	}
 	assertCostTrendBucket(t, dailyOlderPage, "2026-01-09", 0)
 	assertCostTrendBucket(t, dailyOlderPage, "2026-02-07", 0)
+}
+
+func TestRequestStatistics_CostTrendContextSQLiteUsesUTCPlus8Buckets(t *testing.T) {
+	original := StatisticsEnabled()
+	SetStatisticsEnabled(true)
+	t.Cleanup(func() { SetStatisticsEnabled(original) })
+
+	stats := NewRequestStatistics()
+	if err := stats.Configure(t.TempDir()); err != nil {
+		t.Fatalf("configure stats: %v", err)
+	}
+	t.Cleanup(func() { _ = stats.Close() })
+
+	now := time.Date(2026, 3, 10, 0, 20, 0, 0, time.UTC)
+	records := []coreusage.Record{
+		{
+			APIKey:      "api-cost-boundary",
+			Model:       "model-a",
+			RequestedAt: time.Date(2026, 3, 9, 15, 59, 59, 0, time.UTC),
+			Detail: coreusage.Detail{
+				InputTokens:  1_000_000,
+				OutputTokens: 1_000_000,
+				TotalTokens:  2_000_000,
+			},
+		},
+		{
+			APIKey:      "api-cost-boundary",
+			Model:       "model-a",
+			RequestedAt: time.Date(2026, 3, 9, 16, 0, 0, 0, time.UTC),
+			Detail: coreusage.Detail{
+				InputTokens:  2_000_000,
+				OutputTokens: 1_000_000,
+				TotalTokens:  3_000_000,
+			},
+		},
+	}
+	for _, record := range records {
+		stats.Record(context.Background(), record)
+	}
+
+	modelPrices := map[string]ModelPrice{
+		"model-a": {PromptMilli: 1000, CompletionMilli: 2000, CacheMilli: 500},
+	}
+
+	hourly, err := stats.CostTrendContext(context.Background(), CostTrendOptions{
+		Granularity: tokenBreakdownGranularityHour,
+		Range:       tokenBreakdownRange24h,
+		Now:         now,
+		ModelPrices: modelPrices,
+	})
+	if err != nil {
+		t.Fatalf("hourly boundary cost trend: %v", err)
+	}
+	assertCostTrendBucket(t, hourly, "03-09 23:00", 3)
+	assertCostTrendBucket(t, hourly, "03-10 00:00", 4)
+
+	daily, err := stats.CostTrendContext(context.Background(), CostTrendOptions{
+		Granularity: tokenBreakdownGranularityDay,
+		Range:       tokenBreakdownRange24h,
+		Now:         now,
+		ModelPrices: modelPrices,
+	})
+	if err != nil {
+		t.Fatalf("daily boundary cost trend: %v", err)
+	}
+	assertCostTrendBucket(t, daily, "2026-03-10", 4)
 }
 
 func assertCostTrendBucket(t *testing.T, snapshot CostTrendSnapshot, label string, cost float64) {

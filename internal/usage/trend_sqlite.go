@@ -283,22 +283,13 @@ func resolveTrendWindow(options normalizedTrendOptions) trendWindow {
 			bucketCount = 7
 		}
 
-		currentHour := options.Now.Truncate(time.Hour)
+		currentHour := usageChartStartOfHour(options.Now)
 		start := currentHour.Add(-time.Duration(bucketCount-1) * time.Hour)
 		end := currentHour.Add(time.Hour)
 		return buildTrendWindow(start, end, bucketCount, trendGranularityHour)
 	}
 
-	currentDay := time.Date(
-		options.Now.Year(),
-		options.Now.Month(),
-		options.Now.Day(),
-		0,
-		0,
-		0,
-		0,
-		time.UTC,
-	)
+	currentDay := usageChartStartOfDay(options.Now)
 
 	switch options.Range {
 	case trendRange7h, trendRange24h:
@@ -340,10 +331,7 @@ func queryTrendRows(
 	options normalizedTrendOptions,
 	window trendWindow,
 ) ([]trendAggregateRow, error) {
-	groupExpr := "date(timestamp_utc)"
-	if options.Granularity == trendGranularityHour {
-		groupExpr = "strftime('%Y-%m-%dT%H:00:00Z', timestamp_utc)"
-	}
+	groupExpr := usageRecordBucketGroupExpr(options.Granularity)
 
 	windowFilter := buildUsageRecordHalfOpenFilter(window.Start, window.End)
 	clauses := make([]string, 0, 2)

@@ -102,10 +102,7 @@ func queryCostTrendRows(
 	granularity string,
 	window tokenBreakdownWindow,
 ) ([]costTrendRow, error) {
-	groupExpr := "date(timestamp_utc)"
-	if granularity == tokenBreakdownGranularityHour {
-		groupExpr = "strftime('%Y-%m-%dT%H:00:00Z', timestamp_utc)"
-	}
+	groupExpr := usageRecordBucketGroupExpr(granularity)
 
 	filter := buildUsageRecordHalfOpenFilter(window.Start, window.End)
 	query := fmt.Sprintf(`
