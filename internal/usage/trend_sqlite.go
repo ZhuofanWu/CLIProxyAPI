@@ -21,6 +21,7 @@ const (
 	trendMetricRequests = "requests"
 	trendMetricTokens   = "tokens"
 	trendAllModelName   = "all"
+	trendAllPageDays    = 15
 )
 
 type trendAggregateRow struct {
@@ -58,14 +59,13 @@ func (s *sqliteStore) TrendContext(ctx context.Context, options TrendOptions) (T
 		return TrendSnapshot{}, err
 	}
 
-	window, err := resolveTrendWindow(ctx, db, normalizedOptions)
-	if err != nil {
-		return TrendSnapshot{}, err
-	}
+	window := resolveTrendWindow(normalizedOptions)
 
 	snapshot := TrendSnapshot{
 		Granularity: normalizedOptions.Granularity,
 		Range:       normalizedOptions.Range,
+		Offset:      normalizedOptions.Offset,
+		HasOlder:    false,
 		Labels:      append([]string(nil), window.Labels...),
 		Series:      make([]TrendSeries, 0, len(normalizedOptions.Models)),
 	}
@@ -149,6 +149,14 @@ func (s *sqliteStore) TrendContext(ctx context.Context, options TrendOptions) (T
 		})
 	}
 
+	if normalizedOptions.Granularity == trendGranularityDay && normalizedOptions.Range == trendRangeAll {
+		hasOlder, err := queryTokenBreakdownHasOlder(ctx, db, window.Start)
+		if err != nil {
+			return TrendSnapshot{}, err
+		}
+		snapshot.HasOlder = hasOlder
+	}
+
 	return snapshot, nil
 }
 
@@ -180,6 +188,7 @@ func (s *sqliteStore) TrendModelsContext(
 type normalizedTrendOptions struct {
 	Granularity string
 	Range       string
+	Offset      int
 	Now         time.Time
 	Models      []string
 	modelSet    map[string]struct{}
@@ -212,6 +221,10 @@ func normalizeTrendOptions(options TrendOptions) (normalizedTrendOptions, error)
 	} else {
 		now = now.UTC()
 	}
+	offset := options.Offset
+	if offset < 0 {
+		return normalizedTrendOptions{}, fmt.Errorf("invalid usage trend offset: %d", offset)
+	}
 
 	models := make([]string, 0, len(options.Models))
 	modelSet := make(map[string]struct{}, len(options.Models))
@@ -233,10 +246,14 @@ func normalizeTrendOptions(options TrendOptions) (normalizedTrendOptions, error)
 		models = []string{trendAllModelName}
 		modelSet[trendAllModelName] = struct{}{}
 	}
+	if granularity != trendGranularityDay || queryRange != trendRangeAll {
+		offset = 0
+	}
 
 	return normalizedTrendOptions{
 		Granularity: granularity,
 		Range:       queryRange,
+		Offset:      offset,
 		Now:         now,
 		Models:      models,
 		modelSet:    modelSet,
@@ -259,24 +276,17 @@ func normalizeTrendModelsOptions(options TrendModelsOptions) TrendModelsOptions 
 	return options
 }
 
-func resolveTrendWindow(
-	ctx context.Context,
-	db *sql.DB,
-	options normalizedTrendOptions,
-) (trendWindow, error) {
+func resolveTrendWindow(options normalizedTrendOptions) trendWindow {
 	if options.Granularity == trendGranularityHour {
 		bucketCount := 24
-		switch options.Range {
-		case trendRange7h:
+		if options.Range == trendRange7h {
 			bucketCount = 7
-		case trendRange7d:
-			bucketCount = 7 * 24
 		}
 
 		currentHour := options.Now.Truncate(time.Hour)
 		start := currentHour.Add(-time.Duration(bucketCount-1) * time.Hour)
 		end := currentHour.Add(time.Hour)
-		return buildTrendWindow(start, end, bucketCount, trendGranularityHour), nil
+		return buildTrendWindow(start, end, bucketCount, trendGranularityHour)
 	}
 
 	currentDay := time.Date(
@@ -290,46 +300,19 @@ func resolveTrendWindow(
 		time.UTC,
 	)
 
-	var startDay time.Time
 	switch options.Range {
+	case trendRange7h, trendRange24h:
+		return buildTrendWindow(currentDay, currentDay.AddDate(0, 0, 1), 1, trendGranularityDay)
+	case trendRange7d:
+		startDay := currentDay.AddDate(0, 0, -6)
+		return buildTrendWindow(startDay, currentDay.AddDate(0, 0, 1), 7, trendGranularityDay)
 	case trendRangeAll:
-		earliest, ok, err := queryTrendEarliestTimestamp(ctx, db)
-		if err != nil {
-			return trendWindow{}, err
-		}
-		if !ok {
-			return trendWindow{}, nil
-		}
-		startDay = time.Date(
-			earliest.Year(),
-			earliest.Month(),
-			earliest.Day(),
-			0,
-			0,
-			0,
-			0,
-			time.UTC,
-		)
+		endDay := currentDay.AddDate(0, 0, -options.Offset)
+		startDay := endDay.AddDate(0, 0, -(trendAllPageDays - 1))
+		return buildTrendWindow(startDay, endDay.AddDate(0, 0, 1), trendAllPageDays, trendGranularityDay)
 	default:
-		since := options.Now.Add(-trendRangeDuration(options.Range))
-		startDay = time.Date(
-			since.Year(),
-			since.Month(),
-			since.Day(),
-			0,
-			0,
-			0,
-			0,
-			time.UTC,
-		)
+		return buildTrendWindow(currentDay, currentDay.AddDate(0, 0, 1), 1, trendGranularityDay)
 	}
-
-	bucketCount := int(currentDay.Sub(startDay)/(24*time.Hour)) + 1
-	if bucketCount < 1 {
-		bucketCount = 1
-	}
-
-	return buildTrendWindow(startDay, currentDay.AddDate(0, 0, 1), bucketCount, trendGranularityDay), nil
 }
 
 func buildTrendWindow(start time.Time, end time.Time, bucketCount int, granularity string) trendWindow {
@@ -349,19 +332,6 @@ func buildTrendWindow(start time.Time, end time.Time, bucketCount int, granulari
 		window.Keys[index] = tokenBreakdownBucketKey(granularity, bucketTime)
 	}
 	return window
-}
-
-func trendRangeDuration(queryRange string) time.Duration {
-	switch queryRange {
-	case trendRange7h:
-		return 7 * time.Hour
-	case trendRange24h:
-		return 24 * time.Hour
-	case trendRange7d:
-		return 7 * 24 * time.Hour
-	default:
-		return 0
-	}
 }
 
 func queryTrendRows(
@@ -423,32 +393,6 @@ func queryTrendRows(
 	return result, nil
 }
 
-func queryTrendEarliestTimestamp(ctx context.Context, db *sql.DB) (time.Time, bool, error) {
-	row := db.QueryRowContext(ctx, `
-		SELECT timestamp_utc
-		FROM usage_records
-		ORDER BY julianday(timestamp_utc) ASC
-		LIMIT 1
-	`)
-
-	var timestampUTC sql.NullString
-	if err := row.Scan(&timestampUTC); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return time.Time{}, false, nil
-		}
-		return time.Time{}, false, fmt.Errorf("usage statistics: query earliest trend timestamp: %w", err)
-	}
-	if !timestampUTC.Valid || strings.TrimSpace(timestampUTC.String) == "" {
-		return time.Time{}, false, nil
-	}
-
-	parsedTime, err := time.Parse(time.RFC3339Nano, timestampUTC.String)
-	if err != nil {
-		return time.Time{}, false, fmt.Errorf("usage statistics: parse earliest trend timestamp: %w", err)
-	}
-	return parsedTime.UTC(), true, nil
-}
-
 func queryTrendModelItems(
 	ctx context.Context,
 	db *sql.DB,
@@ -495,6 +439,8 @@ func buildMetricTrendSnapshot(snapshot TrendSnapshot, metric string) MetricTrend
 		Metric:      metric,
 		Granularity: snapshot.Granularity,
 		Range:       snapshot.Range,
+		Offset:      snapshot.Offset,
+		HasOlder:    snapshot.HasOlder,
 		Labels:      append([]string(nil), snapshot.Labels...),
 		Series:      make([]MetricTrendSeries, 0, len(snapshot.Series)),
 	}

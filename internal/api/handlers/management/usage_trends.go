@@ -3,6 +3,7 @@ package management
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,6 +65,7 @@ func (h *Handler) getUsageMetricTrend(c *gin.Context, metric string) {
 	options, err := buildUsageTrendOptions(
 		c.Query("granularity"),
 		c.Query("range"),
+		c.Query("offset"),
 		c.QueryArray("model"),
 		now,
 	)
@@ -88,6 +90,8 @@ func (h *Handler) getUsageMetricTrend(c *gin.Context, metric string) {
 		Metric:      metric,
 		Granularity: snapshot.Granularity,
 		Range:       snapshot.Range,
+		Offset:      snapshot.Offset,
+		HasOlder:    snapshot.HasOlder,
 		Labels:      append([]string(nil), snapshot.Labels...),
 		Series:      make([]usage.MetricTrendSeries, 0, len(snapshot.Series)),
 	}
@@ -110,6 +114,7 @@ func (h *Handler) getUsageMetricTrend(c *gin.Context, metric string) {
 func buildUsageTrendOptions(
 	rawGranularity string,
 	rawRange string,
+	rawOffset string,
 	rawModels []string,
 	now time.Time,
 ) (usage.TrendOptions, error) {
@@ -133,6 +138,15 @@ func buildUsageTrendOptions(
 		return usage.TrendOptions{}, errors.New("invalid usage trend range")
 	}
 
+	offset := 0
+	if strings.TrimSpace(rawOffset) != "" {
+		parsedOffset, err := strconv.Atoi(strings.TrimSpace(rawOffset))
+		if err != nil || parsedOffset < 0 {
+			return usage.TrendOptions{}, errors.New("invalid usage trend offset")
+		}
+		offset = parsedOffset
+	}
+
 	models := make([]string, 0, len(rawModels))
 	for _, rawModel := range rawModels {
 		modelName := strings.TrimSpace(rawModel)
@@ -145,6 +159,7 @@ func buildUsageTrendOptions(
 	return usage.TrendOptions{
 		Granularity: granularity,
 		Range:       queryRange,
+		Offset:      offset,
 		Now:         now,
 		Models:      models,
 	}, nil

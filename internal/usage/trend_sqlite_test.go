@@ -25,78 +25,172 @@ func TestRequestStatistics_TrendContextSQLite(t *testing.T) {
 			APIKey:      "api-trend",
 			Model:       "model-a",
 			RequestedAt: time.Date(2026, 3, 10, 12, 5, 0, 0, time.UTC),
-			Detail:      coreusage.Detail{InputTokens: 5, OutputTokens: 10, TotalTokens: 15},
+			Detail:      coreusage.Detail{TotalTokens: 15},
 		},
 		{
 			APIKey:      "api-trend",
 			Model:       "model-a",
 			RequestedAt: time.Date(2026, 3, 10, 10, 10, 0, 0, time.UTC),
-			Detail:      coreusage.Detail{InputTokens: 3, OutputTokens: 4, TotalTokens: 7},
+			Detail:      coreusage.Detail{TotalTokens: 7},
 		},
 		{
 			APIKey:      "api-trend",
 			Model:       "model-b",
 			RequestedAt: time.Date(2026, 3, 10, 12, 15, 0, 0, time.UTC),
-			Detail:      coreusage.Detail{InputTokens: 8, OutputTokens: 12, TotalTokens: 20},
+			Detail:      coreusage.Detail{TotalTokens: 20},
 		},
 		{
 			APIKey:      "api-trend",
 			Model:       "model-c",
 			RequestedAt: time.Date(2026, 3, 10, 8, 0, 0, 0, time.UTC),
-			Detail:      coreusage.Detail{InputTokens: 12, OutputTokens: 18, TotalTokens: 30},
+			Detail:      coreusage.Detail{TotalTokens: 30},
 		},
 		{
 			APIKey:      "api-trend",
 			Model:       "model-d",
 			RequestedAt: time.Date(2026, 3, 9, 23, 0, 0, 0, time.UTC),
-			Detail:      coreusage.Detail{InputTokens: 5, OutputTokens: 6, TotalTokens: 11},
+			Detail:      coreusage.Detail{TotalTokens: 11},
+		},
+		{
+			APIKey:      "api-trend",
+			Model:       "model-e",
+			RequestedAt: time.Date(2026, 3, 5, 9, 0, 0, 0, time.UTC),
+			Detail:      coreusage.Detail{TotalTokens: 40},
+		},
+		{
+			APIKey:      "api-trend",
+			Model:       "model-old",
+			RequestedAt: time.Date(2026, 2, 20, 9, 0, 0, 0, time.UTC),
+			Detail:      coreusage.Detail{TotalTokens: 99},
 		},
 	}
 	for _, record := range records {
 		stats.Record(context.Background(), record)
 	}
 
-	hourly, err := stats.TrendContext(context.Background(), TrendOptions{
+	hourly7h, err := stats.TrendContext(context.Background(), TrendOptions{
 		Granularity: trendGranularityHour,
 		Range:       trendRange7h,
 		Now:         now,
 		Models:      []string{trendAllModelName, "model-a", "model-c"},
 	})
 	if err != nil {
-		t.Fatalf("hourly trend: %v", err)
+		t.Fatalf("hourly 7h trend: %v", err)
 	}
-	if got := len(hourly.Labels); got != 7 {
-		t.Fatalf("len(hourly.Labels) = %d, want 7", got)
+	if got := len(hourly7h.Labels); got != 7 {
+		t.Fatalf("len(hourly7h.Labels) = %d, want 7", got)
 	}
-	if got := len(hourly.Series); got != 3 {
-		t.Fatalf("len(hourly.Series) = %d, want 3", got)
+	if hourly7h.Offset != 0 || hourly7h.HasOlder {
+		t.Fatalf("hourly7h pagination = (%d,%t), want (0,false)", hourly7h.Offset, hourly7h.HasOlder)
 	}
-	assertTrendSeriesValue(t, hourly, trendAllModelName, "03-10 08:00", 1, 30)
-	assertTrendSeriesValue(t, hourly, trendAllModelName, "03-10 10:00", 1, 7)
-	assertTrendSeriesValue(t, hourly, trendAllModelName, "03-10 12:00", 2, 35)
-	assertTrendSeriesValue(t, hourly, "model-a", "03-10 10:00", 1, 7)
-	assertTrendSeriesValue(t, hourly, "model-a", "03-10 12:00", 1, 15)
-	assertTrendSeriesValue(t, hourly, "model-c", "03-10 08:00", 1, 30)
+	assertTrendSeriesValue(t, hourly7h, trendAllModelName, "03-10 08:00", 1, 30)
+	assertTrendSeriesValue(t, hourly7h, trendAllModelName, "03-10 10:00", 1, 7)
+	assertTrendSeriesValue(t, hourly7h, trendAllModelName, "03-10 12:00", 2, 35)
 
-	daily, err := stats.TrendContext(context.Background(), TrendOptions{
-		Granularity: trendGranularityDay,
-		Range:       trendRange24h,
+	hourlyAll, err := stats.TrendContext(context.Background(), TrendOptions{
+		Granularity: trendGranularityHour,
+		Range:       trendRangeAll,
+		Offset:      trendAllPageDays,
 		Now:         now,
 		Models:      []string{trendAllModelName, "model-d"},
 	})
 	if err != nil {
-		t.Fatalf("daily trend: %v", err)
+		t.Fatalf("hourly all trend: %v", err)
 	}
-	if got := len(daily.Labels); got != 2 {
-		t.Fatalf("len(daily.Labels) = %d, want 2", got)
+	if got := len(hourlyAll.Labels); got != 24 {
+		t.Fatalf("len(hourlyAll.Labels) = %d, want 24", got)
 	}
-	if daily.Labels[0] != "2026-03-09" || daily.Labels[1] != "2026-03-10" {
-		t.Fatalf("daily labels = %#v, want [2026-03-09 2026-03-10]", daily.Labels)
+	if hourlyAll.Offset != 0 || hourlyAll.HasOlder {
+		t.Fatalf("hourlyAll pagination = (%d,%t), want (0,false)", hourlyAll.Offset, hourlyAll.HasOlder)
 	}
-	assertTrendSeriesValue(t, daily, trendAllModelName, "2026-03-09", 1, 11)
-	assertTrendSeriesValue(t, daily, trendAllModelName, "2026-03-10", 4, 72)
-	assertTrendSeriesValue(t, daily, "model-d", "2026-03-09", 1, 11)
-	assertTrendSeriesValue(t, daily, "model-d", "2026-03-10", 0, 0)
+	assertTrendSeriesValue(t, hourlyAll, trendAllModelName, "03-09 23:00", 1, 11)
+	assertTrendSeriesValue(t, hourlyAll, trendAllModelName, "03-10 12:00", 2, 35)
+	assertTrendSeriesValue(t, hourlyAll, "model-d", "03-09 23:00", 1, 11)
+
+	daily7h, err := stats.TrendContext(context.Background(), TrendOptions{
+		Granularity: trendGranularityDay,
+		Range:       trendRange7h,
+		Now:         now,
+		Models:      []string{trendAllModelName, "model-d"},
+	})
+	if err != nil {
+		t.Fatalf("daily 7h trend: %v", err)
+	}
+	if got := len(daily7h.Labels); got != 1 {
+		t.Fatalf("len(daily7h.Labels) = %d, want 1", got)
+	}
+	if daily7h.Labels[0] != "2026-03-10" {
+		t.Fatalf("daily7h label = %q, want 2026-03-10", daily7h.Labels[0])
+	}
+	assertTrendSeriesValue(t, daily7h, trendAllModelName, "2026-03-10", 4, 72)
+	assertTrendSeriesValue(t, daily7h, "model-d", "2026-03-10", 0, 0)
+
+	daily7d, err := stats.TrendContext(context.Background(), TrendOptions{
+		Granularity: trendGranularityDay,
+		Range:       trendRange7d,
+		Now:         now,
+		Models:      []string{trendAllModelName, "model-e"},
+	})
+	if err != nil {
+		t.Fatalf("daily 7d trend: %v", err)
+	}
+	if got := len(daily7d.Labels); got != 7 {
+		t.Fatalf("len(daily7d.Labels) = %d, want 7", got)
+	}
+	if daily7d.Labels[0] != "2026-03-04" || daily7d.Labels[6] != "2026-03-10" {
+		t.Fatalf("daily7d labels = (%s,%s), want (2026-03-04,2026-03-10)", daily7d.Labels[0], daily7d.Labels[6])
+	}
+	assertTrendSeriesValue(t, daily7d, trendAllModelName, "2026-03-05", 1, 40)
+	assertTrendSeriesValue(t, daily7d, trendAllModelName, "2026-03-10", 4, 72)
+	assertTrendSeriesValue(t, daily7d, "model-e", "2026-03-05", 1, 40)
+
+	dailyAll, err := stats.TrendContext(context.Background(), TrendOptions{
+		Granularity: trendGranularityDay,
+		Range:       trendRangeAll,
+		Now:         now,
+		Models:      []string{trendAllModelName, "model-old"},
+	})
+	if err != nil {
+		t.Fatalf("daily all trend: %v", err)
+	}
+	if got := len(dailyAll.Labels); got != trendAllPageDays {
+		t.Fatalf("len(dailyAll.Labels) = %d, want %d", got, trendAllPageDays)
+	}
+	if dailyAll.Offset != 0 || !dailyAll.HasOlder {
+		t.Fatalf("dailyAll pagination = (%d,%t), want (0,true)", dailyAll.Offset, dailyAll.HasOlder)
+	}
+	if dailyAll.Labels[0] != "2026-02-24" || dailyAll.Labels[len(dailyAll.Labels)-1] != "2026-03-10" {
+		t.Fatalf(
+			"dailyAll labels = (%s,%s), want (2026-02-24,2026-03-10)",
+			dailyAll.Labels[0],
+			dailyAll.Labels[len(dailyAll.Labels)-1],
+		)
+	}
+	assertTrendSeriesValue(t, dailyAll, trendAllModelName, "2026-03-05", 1, 40)
+	assertTrendSeriesValue(t, dailyAll, trendAllModelName, "2026-03-10", 4, 72)
+
+	dailyOlderPage, err := stats.TrendContext(context.Background(), TrendOptions{
+		Granularity: trendGranularityDay,
+		Range:       trendRangeAll,
+		Offset:      trendAllPageDays,
+		Now:         now,
+		Models:      []string{trendAllModelName, "model-old"},
+	})
+	if err != nil {
+		t.Fatalf("daily older trend: %v", err)
+	}
+	if dailyOlderPage.Offset != trendAllPageDays || dailyOlderPage.HasOlder {
+		t.Fatalf("dailyOlderPage pagination = (%d,%t), want (%d,false)", dailyOlderPage.Offset, dailyOlderPage.HasOlder, trendAllPageDays)
+	}
+	if dailyOlderPage.Labels[0] != "2026-02-09" || dailyOlderPage.Labels[len(dailyOlderPage.Labels)-1] != "2026-02-23" {
+		t.Fatalf(
+			"dailyOlderPage labels = (%s,%s), want (2026-02-09,2026-02-23)",
+			dailyOlderPage.Labels[0],
+			dailyOlderPage.Labels[len(dailyOlderPage.Labels)-1],
+		)
+	}
+	assertTrendSeriesValue(t, dailyOlderPage, trendAllModelName, "2026-02-20", 1, 99)
+	assertTrendSeriesValue(t, dailyOlderPage, "model-old", "2026-02-20", 1, 99)
 }
 
 func TestRequestStatistics_TrendModelsContextSQLite(t *testing.T) {

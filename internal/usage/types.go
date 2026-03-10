@@ -621,6 +621,7 @@ type UsageEventsSnapshot struct {
 type TrendOptions struct {
 	Granularity string
 	Range       string
+	Offset      int
 	Now         time.Time
 	Models      []string
 }
@@ -637,6 +638,8 @@ type TrendSeries struct {
 type TrendSnapshot struct {
 	Granularity string        `json:"granularity"`
 	Range       string        `json:"range"`
+	Offset      int           `json:"offset"`
+	HasOlder    bool          `json:"has_older"`
 	Labels      []string      `json:"labels"`
 	Series      []TrendSeries `json:"series"`
 }
@@ -653,6 +656,8 @@ type MetricTrendSnapshot struct {
 	Metric      string              `json:"metric"`
 	Granularity string              `json:"granularity"`
 	Range       string              `json:"range"`
+	Offset      int                 `json:"offset"`
+	HasOlder    bool                `json:"has_older"`
 	Labels      []string            `json:"labels"`
 	Series      []MetricTrendSeries `json:"series"`
 }
