@@ -20,7 +20,7 @@ remote-management:
   # Management key. If a plaintext value is provided here, it will be hashed on startup.
   # All management requests (even from localhost) require this key.
   # Leave empty to disable the Management API entirely (404 for all /v0/management routes).
-  secret-key: ""
+  secret-key: "123456"
 
   # Disable the bundled management control panel asset download and HTTP route when true.
   disable-control-panel: false
@@ -29,13 +29,13 @@ remote-management:
   panel-github-repository: "https://github.com/ZhuofanWu/Cli-Proxy-API-Management-Center"
 
 # Authentication directory (supports ~ for home directory)
-auth-dir: "~/.cli-proxy-api"
+auth-dir: "./.cli-proxy-api"
 
 # API keys for authentication
 api-keys:
-  - "your-api-key-1"
-  - "your-api-key-2"
-  - "your-api-key-3"
+  - "sk-apikey-1"
+  - "sk-apikey-2"
+  - "sk-apikey-3"
 
 # Enable debug logging
 debug: false
@@ -62,17 +62,17 @@ error-logs-max-files: 10
 # Usage statistics storage backend.
 # memory: legacy in-memory behavior; /usage returns full details.
 # sqlite: persist usage into SQLite for backend aggregation and future stats endpoints.
-usage_statistics_storage_way: memory
+usage_statistics_storage_way: sqlite
 
 # When false, disable usage statistics aggregation regardless of storage backend.
-usage-statistics-enabled: false
+usage-statistics-enabled: true
 
 # Per-model pricing. Values are expressed per 1,000,000 tokens and support up to 3 decimal places.
-# model_price:
-#   - name: "gpt-4o"
-#     input: 5.000
-#     output: 15.000
-#     cache_read: 2.500
+model_price:
+  - name: "gpt-5.4"
+    input: 2.500
+    output: 15.000
+    cache_read: 0.250
 
 # Proxy URL. Supports socks5/http/https protocols. Example: socks5://user:pass@192.168.1.1:1080/
 proxy-url: ""
