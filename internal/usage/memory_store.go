@@ -32,9 +32,13 @@ type apiStats struct {
 }
 
 type modelStats struct {
-	TotalRequests int64
-	TotalTokens   int64
-	Details       []RequestDetail
+	TotalRequests   int64
+	TotalTokens     int64
+	InputTokens     int64
+	OutputTokens    int64
+	ReasoningTokens int64
+	CachedTokens    int64
+	Details         []RequestDetail
 }
 
 func newMemoryStore() *memoryStore {
@@ -125,6 +129,10 @@ func (s *memoryStore) updateAPIStats(stats *apiStats, model string, detail Reque
 	}
 	modelStatsValue.TotalRequests++
 	modelStatsValue.TotalTokens += detail.Tokens.TotalTokens
+	modelStatsValue.InputTokens += detail.Tokens.InputTokens
+	modelStatsValue.OutputTokens += detail.Tokens.OutputTokens
+	modelStatsValue.ReasoningTokens += detail.Tokens.ReasoningTokens
+	modelStatsValue.CachedTokens += detail.Tokens.CachedTokens
 	modelStatsValue.Details = append(modelStatsValue.Details, detail)
 }
 
@@ -153,9 +161,13 @@ func (s *memoryStore) Snapshot() StatisticsSnapshot {
 			requestDetails := make([]RequestDetail, len(modelStatsValue.Details))
 			copy(requestDetails, modelStatsValue.Details)
 			apiSnapshot.Models[modelName] = ModelSnapshot{
-				TotalRequests: modelStatsValue.TotalRequests,
-				TotalTokens:   modelStatsValue.TotalTokens,
-				Details:       requestDetails,
+				TotalRequests:   modelStatsValue.TotalRequests,
+				TotalTokens:     modelStatsValue.TotalTokens,
+				InputTokens:     modelStatsValue.InputTokens,
+				OutputTokens:    modelStatsValue.OutputTokens,
+				ReasoningTokens: modelStatsValue.ReasoningTokens,
+				CachedTokens:    modelStatsValue.CachedTokens,
+				Details:         requestDetails,
 			}
 		}
 		result.APIs[apiName] = apiSnapshot

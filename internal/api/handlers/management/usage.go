@@ -11,8 +11,6 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/usage"
 )
 
-const usageEventDetailLimit = 100
-
 var usageRangeSinceMap = map[string]time.Duration{
 	"7h":  7 * time.Hour,
 	"24h": 24 * time.Hour,
@@ -32,45 +30,29 @@ type usageImportPayload struct {
 	Records []usage.PersistedRecord  `json:"records"`
 }
 
-// GetUsageStatistics returns usage statistics using the active storage backend semantics.
+// GetUsageStatistics returns the complete usage snapshot for the active storage backend.
 func (h *Handler) GetUsageStatistics(c *gin.Context) {
-	var snapshot usage.StatisticsSnapshot
-	if h != nil && h.usageStats != nil {
-		if h.usageStats.StorageWay() == usage.UsageStorageWaySQLite {
-			options, optionsErr := buildUsageSnapshotOptions(c.Query("range"))
-			if optionsErr != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": optionsErr.Error()})
-				return
-			}
-			var err error
-			snapshot, err = h.usageStats.SnapshotContextWithOptions(c.Request.Context(), options)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-		} else {
-			snapshot = h.usageStats.Snapshot()
-		}
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"usage":           snapshot,
-		"failed_requests": snapshot.FailureCount,
-	})
+	h.writeUsageStatisticsSnapshot(c)
 }
 
 // GetFullUsageStatistics returns the complete usage snapshot.
+//
+// Deprecated: use /usage instead. This alias will be removed in a future release.
 func (h *Handler) GetFullUsageStatistics(c *gin.Context) {
+	c.Header("Deprecation", "true")
+	c.Header("Link", `</v0/management/usage>; rel="successor-version"`)
+	c.Header("Warning", `299 - "/usage/full is deprecated; use /usage"`)
+	h.writeUsageStatisticsSnapshot(c)
+}
+
+func (h *Handler) writeUsageStatisticsSnapshot(c *gin.Context) {
 	var snapshot usage.StatisticsSnapshot
 	if h != nil && h.usageStats != nil {
-		if h.usageStats.StorageWay() == usage.UsageStorageWaySQLite {
-			var err error
-			snapshot, err = h.usageStats.SnapshotContext(c.Request.Context())
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-		} else {
-			snapshot = h.usageStats.Snapshot()
+		var err error
+		snapshot, err = h.usageStats.SnapshotContext(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -177,7 +159,7 @@ func (h *Handler) ImportUsageStatistics(c *gin.Context) {
 
 func buildUsageSnapshotOptions(rawRange string) (usage.SnapshotOptions, error) {
 	queryRange := strings.ToLower(strings.TrimSpace(rawRange))
-	options := usage.SnapshotOptions{DetailLimit: usageEventDetailLimit}
+	options := usage.SnapshotOptions{}
 	if queryRange == "" || queryRange == "all" {
 		return options, nil
 	}
