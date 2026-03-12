@@ -35,16 +35,6 @@ func (h *Handler) GetUsageStatistics(c *gin.Context) {
 	h.writeUsageStatisticsSnapshot(c)
 }
 
-// GetFullUsageStatistics returns the complete usage snapshot.
-//
-// Deprecated: use /usage instead. This alias will be removed in a future release.
-func (h *Handler) GetFullUsageStatistics(c *gin.Context) {
-	c.Header("Deprecation", "true")
-	c.Header("Link", `</v0/management/usage>; rel="successor-version"`)
-	c.Header("Warning", `299 - "/usage/full is deprecated; use /usage"`)
-	h.writeUsageStatisticsSnapshot(c)
-}
-
 func (h *Handler) writeUsageStatisticsSnapshot(c *gin.Context) {
 	var snapshot usage.StatisticsSnapshot
 	if h != nil && h.usageStats != nil {

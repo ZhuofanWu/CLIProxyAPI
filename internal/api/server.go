@@ -501,7 +501,6 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.GET("/usage/rankings", s.mgmt.GetUsageRankings)
 		mgmt.GET("/usage/token-breakdown", s.mgmt.GetUsageTokenBreakdown)
 		mgmt.GET("/usage/cost-trend", s.mgmt.GetUsageCostTrend)
-		mgmt.GET("/usage/full", s.mgmt.GetFullUsageStatistics)
 		mgmt.GET("/usage/export", s.mgmt.ExportUsageStatistics)
 		mgmt.POST("/usage/import", s.mgmt.ImportUsageStatistics)
 		mgmt.GET("/config", s.mgmt.GetConfig)

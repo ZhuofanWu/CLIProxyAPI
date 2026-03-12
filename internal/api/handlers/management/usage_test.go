@@ -149,54 +149,6 @@ func TestGetUsageStatistics_SQLiteIgnoresRangeAndReturnsFullDetails(t *testing.T
 	}
 }
 
-func TestGetFullUsageStatistics_DeprecatedAliasUsesUsageSnapshot(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	original := usage.StatisticsEnabled()
-	usage.SetStatisticsEnabled(true)
-	t.Cleanup(func() { usage.SetStatisticsEnabled(original) })
-
-	stats := usage.NewRequestStatistics()
-	stats.Record(context.Background(), coreusage.Record{
-		APIKey:      "api-memory",
-		Model:       "model-a",
-		RequestedAt: time.Now().UTC(),
-		Detail: coreusage.Detail{
-			InputTokens:  2,
-			OutputTokens: 3,
-			TotalTokens:  5,
-		},
-	})
-
-	h := &Handler{usageStats: stats}
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/v0/management/usage/full?range=deprecated", nil)
-
-	h.GetFullUsageStatistics(c)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", w.Code)
-	}
-	if got := w.Header().Get("Deprecation"); got != "true" {
-		t.Fatalf("Deprecation header = %q, want true", got)
-	}
-	if got := w.Header().Get("Link"); !strings.Contains(got, "/v0/management/usage") {
-		t.Fatalf("Link header = %q, want successor usage route", got)
-	}
-	if got := w.Header().Get("Warning"); !strings.Contains(got, "/usage/full is deprecated") {
-		t.Fatalf("Warning header = %q, want deprecation warning", got)
-	}
-
-	var payload map[string]any
-	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
-	}
-	usageMap := payload["usage"].(map[string]any)
-	if got := int64(usageMap["total_requests"].(float64)); got != 1 {
-		t.Fatalf("total_requests = %d, want 1", got)
-	}
-}
-
 func TestUsageExportImport_MemoryKeepsLegacyVersioning(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	original := usage.StatisticsEnabled()
